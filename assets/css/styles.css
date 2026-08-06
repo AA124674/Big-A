@@ -30,6 +30,10 @@
   /* Support */
   --green:        #3F8F5F;
   --amber:        #B7852B;
+  --warn:         #8A6318;
+  --warn-wash:    #F7EDD8;
+  --err:          #A6412F;
+  --err-wash:     #F7E4E0;
 
   /* Shape */
   --r-sm: 8px;
@@ -73,6 +77,13 @@
   --clay-hover:   #E08B6F;
   --clay-wash:    #3A2A24;
   --clay-ink:     #E8A88E;
+
+  --green:        #6FBF8B;
+  --amber:        #E0B457;
+  --warn:         #E0B457;
+  --warn-wash:    #3A3120;
+  --err:          #E58C77;
+  --err-wash:     #3E2724;
 
   --shadow-sm: 0 1px 2px rgba(0,0,0,.4);
   --shadow-lg: 0 18px 48px rgba(0,0,0,.6);
@@ -1632,12 +1643,24 @@ body.zen .stage { padding: 0; }
 
 /* --- progress detail ---------------------------------------------------- */
 
+/* The label carries the agent's current stage, so it leads the elapsed time. */
+.typing-label { font-weight: 500; color: var(--ink-soft); }
+
 .typing-elapsed {
   font-size: 11px;
   color: var(--ink-faint);
   font-variant-numeric: tabular-nums;
   margin-left: 2px;
 }
+
+/* Empty-list placeholder in the sidebar. */
+.side-note {
+  padding: 7px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-faint);
+}
+.side-note strong { color: var(--ink-muted); font-weight: 600; }
 
 /* A reply still arriving gets a soft caret so it reads as in-progress. */
 .msg-streaming .msg-body::after {
@@ -1793,3 +1816,270 @@ body.zen .stage { padding: 0; }
   color: var(--ink-soft);
   word-break: break-all;
 }
+
+/* ------------------------------------------------------- welcome / setup */
+/* Landing state before any agent exists. Sits where the chat surface would. */
+
+.welcome {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--paper);
+  padding: 32px 24px;
+}
+.welcome[hidden] { display: none; }
+
+.welcome-inner { max-width: 560px; width: 100%; text-align: center; }
+
+.welcome-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: var(--r-lg);
+  background: var(--clay-wash);
+  color: var(--clay);
+  margin-bottom: 16px;
+}
+.welcome-mark svg { width: 28px; height: 28px; }
+
+.welcome-inner h1 {
+  margin: 0 0 10px;
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.welcome-lead {
+  margin: 0 auto 22px;
+  max-width: 460px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--ink-muted);
+}
+
+.welcome-acts {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: 28px;
+}
+
+.welcome-steps {
+  list-style: none;
+  counter-reset: step;
+  margin: 0 0 20px;
+  padding: 0;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  overflow: hidden;
+}
+.welcome-steps li {
+  counter-increment: step;
+  position: relative;
+  padding: 13px 16px 13px 46px;
+  border-bottom: 1px solid var(--line);
+}
+.welcome-steps li:last-child { border-bottom: 0; }
+.welcome-steps li::before {
+  content: counter(step);
+  position: absolute;
+  left: 14px;
+  top: 13px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--clay-wash);
+  color: var(--clay);
+  font-size: 11.5px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.welcome-steps strong {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.welcome-steps span {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--ink-muted);
+}
+.welcome-steps em { font-style: normal; color: var(--ink-soft); font-weight: 500; }
+
+.welcome-foot {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--ink-faint);
+}
+
+/* ------------------------------------------------------------ embed pane */
+/* The frame's contents belong to the agent's own origin and cannot be
+   styled. The chrome around it is ours, so it matches everything else. */
+
+.embed-pane {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+}
+.embed-pane[hidden] { display: none; }
+
+.embed-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.embed-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--warn-wash);
+  color: var(--warn);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.embed-badge svg { width: 13px; height: 13px; }
+
+.embed-note {
+  font-size: 12px;
+  color: var(--ink-muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.embed-bar-acts {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.embed-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+
+.embed-stage #agent-frame {
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+  background: transparent;
+  color-scheme: normal;
+}
+
+.embed-loading,
+.embed-blocked {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--paper);
+  z-index: 2;
+  padding: 24px;
+}
+.embed-loading[hidden],
+.embed-blocked[hidden] { display: none; }
+
+.embed-loading {
+  gap: 10px;
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+
+.embed-blocked-inner { max-width: 400px; text-align: center; }
+.embed-blocked-inner h2 {
+  margin: 12px 0 6px;
+  font-size: 16px;
+  font-weight: 600;
+}
+.embed-blocked-inner p {
+  margin: 0 0 14px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink-muted);
+}
+
+.spinner {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  border: 2px solid var(--line-strong);
+  border-top-color: var(--clay);
+  animation: spin 0.7s linear infinite;
+  flex: none;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation-duration: 2.4s; }
+}
+
+@media (max-width: 640px) {
+  .embed-note { display: none; }
+  .embed-bar-acts { margin-left: auto; }
+}
+
+/* ----------------------------------------------------- ask/confirm dialog */
+
+.modal-ask { width: min(430px, calc(100vw - 32px)); }
+
+.ask-text {
+  margin: 0 0 4px;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+  white-space: pre-line;
+}
+.ask-text[hidden] { display: none; }
+
+.modal-ask .field { margin-top: 14px; }
+.modal-ask .field:first-child { margin-top: 0; }
+
+.ask-error {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--err);
+}
+.ask-error[hidden] { display: none; }
+
+/* Destructive confirmations read as destructive. The background is fixed
+   rather than themed, so white label text keeps its contrast in both themes. */
+.btn-danger {
+  background: #A6412F;
+  border-color: transparent;
+  color: #fff;
+}
+.btn-danger:hover { background: #8E3626; }
+[data-theme="dark"] .btn-danger { background: #B4553A; }
+[data-theme="dark"] .btn-danger:hover { background: #C56546; }

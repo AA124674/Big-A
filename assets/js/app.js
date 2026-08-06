@@ -20,13 +20,11 @@
 
   var THEME_KEY = "biga.theme";   // mirrored to localStorage to avoid a flash
 
-  var DEFAULT_AGENT_URL =
-    "https://copilotstudio.microsoft.com/environments/Default-e0a762aa-f74f-473a-b086-4ceaefb71fbd" +
-    "/bots/bgstest_claude_rxWJjM/webchat?__version__=2&enableFileAttachment=true&cliAgent=true";
-
-  /* The agent's own name is the only label used for it anywhere in the UI:
-     in the switcher, in the sidebar, and on each of its messages. */
-  var DEFAULT_AGENT_NAME = "Claude";
+  /* There is deliberately no seeded agent. A fresh install starts on the
+     welcome pane and the first agent is whichever one the user adds, so the
+     interface never claims a connection it does not have. The agent's own
+     name is the only label used for it anywhere in the UI: in the switcher,
+     in the sidebar, and on each of its messages. */
 
   var ICONS = {
     plus: '<path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/>',
@@ -94,7 +92,10 @@
     agents: [],
     activeAgent: "default",
     activeChat: null,
-    settings: { fileAttach: true, autoOpenWorkbench: true },
+    // The workbench is opt-in. Opening a side panel unasked on first load
+    // buries the conversation and surprises people; it is one click or
+    // Ctrl/Cmd + J away whenever it is wanted.
+    settings: { fileAttach: true, autoOpenWorkbench: false },
     connection: {
       // Current transport: Copilot Studio via the Microsoft 365 Agents SDK.
       mode: "m365",
@@ -132,14 +133,6 @@
 
   function loadPrefs() {
     return Store.kv.all().then(function (kv) {
-      var seedAgent = {
-        id: "default",
-        name: DEFAULT_AGENT_NAME,
-        desc: "Your Copilot Studio agent",
-        url: DEFAULT_AGENT_URL,
-        builtin: true
-      };
-
       if (kv.theme) state.theme = kv.theme;
       if (kv.settings && typeof kv.settings === "object") {
         Object.keys(state.settings).forEach(function (k) {
@@ -148,17 +141,18 @@
       }
       if (kv.artifact && typeof kv.artifact === "object") state.artifact = kv.artifact;
 
-      state.agents = Array.isArray(kv.agents) && kv.agents.length ? kv.agents : [seedAgent];
-      if (!state.agents.some(function (a) { return a.id === "default"; })) state.agents.unshift(seedAgent);
+      state.agents = Array.isArray(kv.agents) ? kv.agents.filter(Boolean) : [];
 
-      // An earlier build shipped the agent under a generic label. The agent's
-      // real name is what the interface should show, so migrate it once.
-      state.agents.forEach(function (a) {
-        if (a.builtin && /^general assistant$/i.test(a.name || "")) a.name = DEFAULT_AGENT_NAME;
+      // Earlier builds seeded a demo agent pointing at someone else's tenant.
+      // Drop it on upgrade unless the user actually edited it, so nobody is
+      // left staring at a connection error for an agent they never chose.
+      state.agents = state.agents.filter(function (a) {
+        return !(a.builtin && /bgstest_claude_rxWJjM/.test(a.url || ""));
       });
 
       state.activeAgent = kv.activeAgent && state.agents.some(function (a) { return a.id === kv.activeAgent; })
-        ? kv.activeAgent : state.agents[0].id;
+        ? kv.activeAgent
+        : (state.agents[0] ? state.agents[0].id : null);
       state.activeChat = kv.activeChat || null;
 
       var conn = kv.connection;
@@ -186,16 +180,19 @@
     if (!M) return;
 
     if (!c.environmentId && !c.directConnectUrl) {
-      var source = c.connectionString || (currentAgent() && currentAgent().url) || DEFAULT_AGENT_URL;
-      try {
-        var parsed = M.parseConnection(source);
-        if (parsed.environmentId) c.environmentId = parsed.environmentId;
-        if (parsed.schemaName) c.schemaName = parsed.schemaName;
-        if (parsed.directConnectUrl) c.directConnectUrl = parsed.directConnectUrl;
-        if (parsed.tenantId && !c.tenantId) c.tenantId = parsed.tenantId;
-        if (parsed.clientId && !c.clientId) c.clientId = parsed.clientId;
-        if (parsed.cloud) c.cloud = parsed.cloud;
-      } catch (e) { /* nothing derivable: the user will fill the form in */ }
+      var agent = currentAgent();
+      var source = c.connectionString || (agent && agent.url) || "";
+      if (source) {
+        try {
+          var parsed = M.parseConnection(source);
+          if (parsed.environmentId) c.environmentId = parsed.environmentId;
+          if (parsed.schemaName) c.schemaName = parsed.schemaName;
+          if (parsed.directConnectUrl) c.directConnectUrl = parsed.directConnectUrl;
+          if (parsed.tenantId && !c.tenantId) c.tenantId = parsed.tenantId;
+          if (parsed.clientId && !c.clientId) c.clientId = parsed.clientId;
+          if (parsed.cloud) c.cloud = parsed.cloud;
+        } catch (e) { /* nothing derivable: the user will fill the form in */ }
+      }
     }
 
     if (!c.scope && global.Connect) c.scope = global.Connect.DEFAULT_AGENT_SCOPE;
@@ -204,8 +201,12 @@
   function uid() { return Store.uid(); }
 
   function currentAgent() {
-    return state.agents.filter(function (a) { return a.id === state.activeAgent; })[0] || state.agents[0];
+    return state.agents.filter(function (a) { return a.id === state.activeAgent; })[0] ||
+           state.agents[0] || null;
   }
+
+  /** True while the workspace has no agent to talk to. */
+  function hasAgent() { return state.agents.length > 0; }
 
   /* ---------------------------------------------------------------- toasts */
 
@@ -282,7 +283,9 @@
     online: ["Live", "secure"],
     reconnecting: ["Reconnecting", "warn"],
     offline: ["Offline", "err"],
-    embed: ["Legacy embed", "warn"]
+    embed: ["Legacy embed", "warn"],
+    err: ["Problem", "err"],
+    idle: ["Not connected", ""]
   };
 
   var MODE_LABEL = {
@@ -304,28 +307,105 @@
 
   /* ----------------------------------------------------- agent connection */
 
-  /** Legacy path: the old embedded canvas, kept only as an escape hatch. */
+  /* Exactly one of the three stage panes is visible at any time. */
+  function showPane(which) {
+    $("#welcome-pane").hidden = which !== "welcome";
+    $("#chat-surface").hidden = which !== "chat";
+    $("#embed-pane").hidden = which !== "embed";
+  }
+
+  /** Landing state: no agent configured yet, so there is nothing to connect. */
+  function showWelcome() {
+    Chat.disconnect();
+    stopEmbed();
+    showPane("welcome");
+    $("#agent-name").textContent = "No agent";
+    $("#wb-agent").textContent = "No agent";
+    document.title = "BIG A";
+    setStatus("idle", "Add an agent to get started");
+    return Promise.resolve();
+  }
+
+  /* ------------------------------------------------------------ legacy embed */
+
+  var embedTimer = null;
+  var embedUrl = "";
+
+  /** Tear the frame down so a hidden embed cannot keep running or recording. */
+  function stopEmbed() {
+    if (embedTimer) { clearTimeout(embedTimer); embedTimer = null; }
+    var frame = $("#agent-frame");
+    if (frame && frame.src !== "about:blank") frame.src = "about:blank";
+  }
+
+  /**
+   * Legacy path: the agent's own canvas in a sandboxed frame. Kept as an
+   * escape hatch. We cannot style or read across the origin boundary, but we
+   * can own the chrome around it and notice when it fails to load.
+   */
   function loadEmbed() {
     var agent = currentAgent();
+    if (!agent) return showWelcome();
+
     var frame = $("#agent-frame");
     Chat.disconnect();
-    $("#chat-surface").hidden = true;
-    frame.hidden = false;
+    showPane("embed");
+
+    $("#embed-loading").hidden = false;
+    $("#embed-blocked").hidden = true;
+    $("#embed-note").textContent =
+      "Messages here are not saved to this browser · " + agent.name;
+
     try {
       var u = new URL(agent.url);
       u.searchParams.set("enableFileAttachment", "true");
-      frame.src = u.toString();
-    } catch (e) { frame.src = agent.url; }
+      embedUrl = u.toString();
+    } catch (e) { embedUrl = agent.url || ""; }
+
+    if (!embedUrl) {
+      $("#embed-loading").hidden = true;
+      $("#embed-blocked").hidden = false;
+      $("#embed-blocked-msg").textContent =
+        "This agent has no embed URL. Add one in its settings, or switch to the full client.";
+      setStatus("err", "Legacy embed: no URL configured");
+      return Promise.resolve();
+    }
+
+    frame.src = embedUrl;
+
+    // A cross-origin frame that refuses to be embedded fires no error event,
+    // so fall back to a deadline. `load` clears it if the canvas arrives.
+    if (embedTimer) clearTimeout(embedTimer);
+    embedTimer = setTimeout(function () {
+      embedTimer = null;
+      if (!$("#embed-loading").hidden) {
+        $("#embed-loading").hidden = true;
+        $("#embed-blocked").hidden = false;
+        $("#embed-blocked-msg").textContent =
+          "The agent's canvas did not load within 20 seconds. Its site may refuse " +
+          "to be embedded, or the URL may be wrong. Opening it in its own tab usually works.";
+        setStatus("err", "Legacy embed did not load");
+        logEvent("Legacy embed timed out", agent.name, "err");
+      }
+    }, 20000);
+
     setStatus("embed", "Embedded canvas: messages are not stored locally");
     logEvent("Legacy embed loaded", agent.name, "warn");
+    return Promise.resolve();
+  }
+
+  function openEmbedTab() {
+    var agent = currentAgent();
+    var url = embedUrl || (agent && agent.url) || "";
+    if (!url) { toast("This agent has no URL to open.", "err"); return; }
+    window.open(url, "_blank", "noopener,noreferrer");
   }
 
   /** Current path: Direct-to-Engine over the Microsoft 365 Agents SDK. */
   function connectActiveChat() {
+    if (!hasAgent()) return showWelcome();
+
     var agent = currentAgent();
-    $("#agent-frame").hidden = true;
-    $("#agent-frame").src = "about:blank";
-    $("#chat-surface").hidden = false;
 
     Chat.setAgent(agent);
     $("#agent-name").textContent = agent.name;
@@ -333,7 +413,10 @@
     $("#chat-empty-title").textContent = "How can I help today?";
     document.title = agent.name + " · BIG A";
 
-    if (state.connection.mode === "iframe") { loadEmbed(); return Promise.resolve(); }
+    if (state.connection.mode === "iframe") return loadEmbed();
+
+    stopEmbed();
+    showPane("chat");
 
     if (state.connection.mode === "m365") return connectViaAgentsSdk(agent);
 
@@ -439,6 +522,13 @@
   }
 
   function newChat(projectId) {
+    // Creating a chat with nothing to talk to just produces a dead end.
+    if (!hasAgent()) {
+      showWelcome();
+      toast("Add an agent first.");
+      setTimeout(openAgentModal, 200);
+      return Promise.resolve();
+    }
     var c = {
       id: uid(),
       title: "New chat",
@@ -456,8 +546,8 @@
       document.body.classList.remove("zen");
       return connectActiveChat();
     }).then(function () {
-      $("#composer-input").focus();
-      logEvent("New chat started", currentAgent().name, "ok");
+      if (hasAgent()) $("#composer-input").focus();
+      logEvent("New chat started", (currentAgent() || {}).name || "no agent", "ok");
     });
   }
 
@@ -487,10 +577,15 @@
   function renameChat(id) {
     var chat = chats.filter(function (c) { return c.id === id; })[0];
     if (!chat) return;
-    var name = prompt("Rename this chat", chat.title);
-    if (name == null) return;
-    chat.title = name.trim() || chat.title;
-    Store.chats.put(chat).then(refreshChats).then(renderSidebar);
+    askPrompt("Rename chat", {
+      label: "Chat name",
+      value: chat.title,
+      ok: "Rename"
+    }).then(function (name) {
+      if (name == null) return;
+      chat.title = name || chat.title;
+      return Store.chats.put(chat).then(refreshChats).then(renderSidebar);
+    });
   }
 
   function moveChat(chatId, projectId) {
@@ -588,6 +683,10 @@
 
   function renderAgents() {
     var host = $("#agent-list");
+    if (!state.agents.length) {
+      host.innerHTML = '<li class="side-note">No agents yet. Use <strong>+</strong> above to add one.</li>';
+      return;
+    }
     host.innerHTML = state.agents.map(function (a) {
       return '<li><button class="side-item' + (a.id === state.activeAgent ? " active" : "") +
         '" data-agent="' + a.id + '"><span class="dot-agent"></span><span class="txt"></span>' +
@@ -668,40 +767,55 @@
   /* ------------------------------------------------------------ projects */
 
   function addProject() {
-    var name = prompt("Name this project");
-    if (name == null) return;
-    name = name.trim();
-    if (!name) return;
-    var p = { id: uid(), name: name, order: projects.length, collapsed: false };
-    Store.projects.put(p).then(refreshProjects).then(function () {
-      renderProjects();
-      toast('Created "' + name + '"');
-      logEvent("Project created", name, "ok");
+    askPrompt("New project", {
+      label: "Project name",
+      placeholder: "e.g. Quarterly report",
+      hint: "Projects group related chats in the sidebar.",
+      ok: "Create"
+    }).then(function (name) {
+      if (name == null) return;
+      var p = { id: uid(), name: name, order: projects.length, collapsed: false };
+      return Store.projects.put(p).then(refreshProjects).then(function () {
+        renderProjects();
+        toast('Created "' + name + '"');
+        logEvent("Project created", name, "ok");
+      });
     });
   }
 
   function renameProject(id) {
     var p = projects.filter(function (x) { return x.id === id; })[0];
     if (!p) return;
-    var name = prompt("Rename project", p.name);
-    if (name == null) return;
-    p.name = name.trim() || p.name;
-    Store.projects.put(p).then(refreshProjects).then(renderProjects);
+    askPrompt("Rename project", {
+      label: "Project name",
+      value: p.name,
+      ok: "Rename"
+    }).then(function (name) {
+      if (name == null) return;
+      p.name = name || p.name;
+      return Store.projects.put(p).then(refreshProjects).then(renderProjects);
+    });
   }
 
   function deleteProject(id) {
     var p = projects.filter(function (x) { return x.id === id; })[0];
     if (!p) return;
     var kids = chats.filter(function (c) { return c.projectId === id; });
-    var msg = kids.length
-      ? 'Delete "' + p.name + '"? Its ' + kids.length + ' chat(s) move back to Recents.'
-      : 'Delete "' + p.name + '"?';
-    if (!confirm(msg)) return;
 
-    Promise.all(kids.map(function (c) { c.projectId = null; return Store.chats.put(c); }))
-      .then(function () { return Store.projects.remove(id); })
-      .then(function () { return Promise.all([refreshChats(), refreshProjects()]); })
-      .then(function () { renderSidebar(); toast("Project deleted"); });
+    askConfirm('Delete "' + p.name + '"?', {
+      body: kids.length
+        ? "Its " + kids.length + " chat" + (kids.length === 1 ? "" : "s") +
+          " will move back to Recents. No messages are deleted."
+        : "This project is empty. Nothing else will be removed.",
+      ok: "Delete project",
+      danger: true
+    }).then(function (yes) {
+      if (!yes) return;
+      return Promise.all(kids.map(function (c) { c.projectId = null; return Store.chats.put(c); }))
+        .then(function () { return Store.projects.remove(id); })
+        .then(function () { return Promise.all([refreshChats(), refreshProjects()]); })
+        .then(function () { renderSidebar(); toast("Project deleted"); });
+    });
   }
 
   function toggleProject(id) {
@@ -949,23 +1063,54 @@
       try { data = JSON.parse(r.result); }
       catch (e) { toast("That file is not valid JSON.", "err"); return; }
 
-      var replace = confirm(
-        "Replace this workspace with the backup?\n\n" +
-        "OK  = replace everything\nCancel = merge the backup into what is already here"
-      );
-      Store.importAll(data, { replace: replace })
-        .then(function (r2) {
-          return Promise.all([refreshChats(), refreshProjects(), loadPrefs()]).then(function () { return r2; });
-        })
-        .then(function (r2) {
-          renderSidebar();
-          toast("Restored " + r2.chats + " chats");
-          logEvent("Workspace restored", r2.messages + " messages", "ok");
-          if (chats.length) { state.activeChat = chats[0].id; savePrefs(); connectActiveChat(); }
-        })
-        .catch(function (err) { toast(err.message, "err"); });
+      var counts = summariseBackup(data);
+
+      askConfirm("Restore this backup?", {
+        body: counts +
+          "\n\nReplace: everything here is deleted first, leaving exactly the backup." +
+          "\nMerge: the backup is added alongside what you already have.",
+        ok: "Replace everything",
+        alt: "Merge",
+        danger: true
+      }).then(function (choice) {
+        if (!choice) return;                       // cancelled
+        runImport(data, choice === "alt" ? false : true);
+      });
     };
+    r.onerror = function () { toast("Could not read that file.", "err"); };
     r.readAsText(file);
+  }
+
+  /** Describe what is inside a backup so the choice is an informed one. */
+  function summariseBackup(data) {
+    function n(v) { return Array.isArray(v) ? v.length : 0; }
+    var bits = [
+      n(data && data.chats) + " chats",
+      n(data && data.messages) + " messages",
+      n(data && data.projects) + " projects"
+    ];
+    return "The file contains " + bits.join(", ") + ".";
+  }
+
+  function runImport(data, replace) {
+    return Store.importAll(data, { replace: replace })
+      .then(function (r2) {
+        return Promise.all([refreshChats(), refreshProjects(), loadPrefs()]).then(function () { return r2; });
+      })
+      .then(function (r2) {
+        renderSidebar();
+        renderAgents();
+        renderAgentMenu();
+        toast("Restored " + r2.chats + " chats");
+        logEvent("Workspace restored", r2.messages + " messages", "ok");
+        if (chats.length && hasAgent()) {
+          state.activeChat = chats[0].id;
+          savePrefs();
+          return connectActiveChat();
+        }
+        return showWelcome();
+      })
+      .catch(function (err) { toast(err.message, "err"); });
   }
 
   /* ------------------------------------------------------- command palette */
@@ -1042,9 +1187,143 @@
     $(sel).classList.add("open");
   }
   function closeModals() {
+    // Any dialog awaiting an answer counts as dismissed when the scrim, the
+    // close button or Escape takes the modal layer down.
+    settleAsk(null);
     $("#scrim").classList.remove("open");
     $$(".modal").forEach(function (m) { m.classList.remove("open"); });
     $$(".menu").forEach(function (m) { m.classList.remove("open"); });
+  }
+
+  /* ------------------------------------------------- ask / confirm dialogs */
+  /* Replaces window.prompt and window.confirm. Native dialogs cannot be
+     themed, are suppressed in some embedded contexts, and block the event
+     loop. These return a Promise instead: a string (or true) when accepted,
+     null (or false) when dismissed. */
+
+  var askPending = null;      // { resolve, kind }
+  var askReturnFocus = null;
+  var askRequired = true;     // prompt only: reject an empty value
+
+  function settleAsk(value) {
+    if (!askPending) return;
+    var p = askPending;
+    askPending = null;
+    // Confirm resolves false rather than null so callers can use it directly.
+    p.resolve(value === null && p.kind === "confirm" ? false : value);
+    if (askReturnFocus && document.contains(askReturnFocus)) {
+      try { askReturnFocus.focus(); } catch (e) { /* element went away */ }
+    }
+    askReturnFocus = null;
+  }
+
+  /**
+   * Open the shared dialog.
+   * @param {Object} o
+   *   kind      "prompt" | "confirm"
+   *   title     heading
+   *   body      explanatory text (optional)
+   *   label     field label, prompt only
+   *   value     initial field value, prompt only
+   *   hint      help text under the field, optional
+   *   ok        confirm button label
+   *   danger    style the confirm button as destructive
+   *   required  reject an empty value, prompt only (default true)
+   * @returns {Promise<string|null|boolean>}
+   */
+  function askDialog(o) {
+    settleAsk(null);
+    o = o || {};
+    var kind = o.kind === "prompt" ? "prompt" : "confirm";
+    var isPrompt = kind === "prompt";
+    askRequired = o.required !== false;
+
+    var body = $("#ask-body");
+    var field = $("#ask-field");
+    var input = $("#ask-input");
+    var hint = $("#ask-hint");
+    var err = $("#ask-error");
+    var ok = $("#ask-ok");
+
+    $("#ask-title").textContent = o.title || (isPrompt ? "Enter a value" : "Are you sure?");
+
+    body.textContent = o.body || "";
+    body.hidden = !o.body;
+
+    field.hidden = !isPrompt;
+    hint.textContent = o.hint || "";
+    hint.hidden = !o.hint;
+    err.hidden = true;
+    err.textContent = "";
+
+    if (isPrompt) {
+      $("#ask-label").textContent = o.label || "Name";
+      input.value = o.value == null ? "" : String(o.value);
+      input.placeholder = o.placeholder || "";
+    }
+
+    ok.textContent = o.ok || (isPrompt ? "Save" : "Confirm");
+    ok.classList.toggle("btn-danger", !!o.danger);
+    ok.classList.toggle("btn-primary", !o.danger);
+
+    // Optional third choice, for questions that are not really yes/no.
+    var alt = $("#ask-alt");
+    alt.hidden = !o.alt;
+    alt.textContent = o.alt || "";
+
+    $("#ask-cancel").textContent = o.cancel || "Cancel";
+
+    askReturnFocus = document.activeElement;
+    openModal("#ask-modal");
+    setTimeout(function () { (isPrompt ? input : ok).focus(); if (isPrompt) input.select(); }, 40);
+
+    return new Promise(function (resolve) {
+      askPending = { resolve: resolve, kind: kind };
+    });
+  }
+
+  function askPrompt(title, o) {
+    o = o || {};
+    o.kind = "prompt";
+    o.title = title;
+    return askDialog(o);
+  }
+
+  function askConfirm(title, o) {
+    o = o || {};
+    o.kind = "confirm";
+    o.title = title;
+    return askDialog(o);
+  }
+
+  /** Accept the dialog. Validates the field for prompts. */
+  function acceptAsk() {
+    if (!askPending) return;
+    if (askPending.kind === "confirm") { finishAsk(true); return; }
+
+    var input = $("#ask-input");
+    var value = input.value.trim();
+    if (askRequired && !value) {
+      var err = $("#ask-error");
+      err.textContent = "Please enter a value.";
+      err.hidden = false;
+      input.focus();
+      return;
+    }
+    finishAsk(value);
+  }
+
+  /** Close the dialog layer and settle with a real answer. */
+  function finishAsk(value) {
+    var p = askPending;
+    askPending = null;
+    $("#scrim").classList.remove("open");
+    $("#ask-modal").classList.remove("open");
+    if (p) p.resolve(value);
+    if (askReturnFocus && document.contains(askReturnFocus)) {
+      try { askReturnFocus.focus(); } catch (e) { /* element went away */ }
+    }
+    askReturnFocus = null;
   }
 
   function openAgentModal() {
@@ -1246,6 +1525,10 @@
   function detectEndpoint() {
     var btn = $("#conn-detect");
     var agent = currentAgent();
+    if (!agent || !agent.url) {
+      toast("Add an agent with an embed URL first.", "err");
+      return;
+    }
     btn.disabled = true;
     btn.textContent = "Detecting…";
     global.DirectLine.discoverTokenEndpoint(agent.url, null)
@@ -1387,9 +1670,26 @@
       var del = e.target.closest("[data-agentdel]");
       if (del) {
         e.stopPropagation();
-        state.agents = state.agents.filter(function (a) { return a.id !== del.dataset.agentdel; });
-        if (state.activeAgent === del.dataset.agentdel) state.activeAgent = state.agents[0].id;
-        savePrefs(); renderAgents(); renderAgentMenu(); connectActiveChat();
+        var id = del.dataset.agentdel;
+        var victim = state.agents.filter(function (a) { return a.id === id; })[0];
+        if (!victim) return;
+
+        askConfirm('Remove "' + victim.name + '"?', {
+          body: state.agents.length === 1
+            ? "This is your only agent. Removing it returns you to the welcome screen. " +
+              "Your saved chats are kept."
+            : "The agent is removed from this browser. Your saved chats are kept.",
+          ok: "Remove agent",
+          danger: true
+        }).then(function (yes) {
+          if (!yes) return;
+          state.agents = state.agents.filter(function (a) { return a.id !== id; });
+          // Guard the last-agent case: there may be nothing left to fall back to.
+          if (state.activeAgent === id) {
+            state.activeAgent = state.agents[0] ? state.agents[0].id : null;
+          }
+          savePrefs(); renderAgents(); renderAgentMenu(); connectActiveChat();
+        });
         return;
       }
       var item = e.target.closest("[data-agent]");
@@ -1534,6 +1834,45 @@
     // Modals
     $("#scrim").addEventListener("click", closeModals);
     $$("[data-close]").forEach(function (b) { b.addEventListener("click", closeModals); });
+
+    // Welcome pane
+    $("#welcome-add").addEventListener("click", openAgentModal);
+    $("#welcome-connect").addEventListener("click", openConnectModal);
+
+    // Legacy embed chrome
+    $("#agent-frame").addEventListener("load", function () {
+      // Fires for about:blank too, so only treat it as success when we are
+      // actually showing an agent.
+      if ($("#embed-pane").hidden) return;
+      if (this.src === "about:blank") return;
+      if (embedTimer) { clearTimeout(embedTimer); embedTimer = null; }
+      $("#embed-loading").hidden = true;
+    });
+    $("#embed-reload").addEventListener("click", function () { loadEmbed(); });
+    $("#embed-open").addEventListener("click", openEmbedTab);
+    $("#embed-open-2").addEventListener("click", openEmbedTab);
+    $("#embed-settings").addEventListener("click", openConnectModal);
+    $("#embed-upgrade").addEventListener("click", function () {
+      state.connection.mode = "m365";
+      savePrefs();
+      syncConnFields();
+      toast("Switched to the Agents SDK transport");
+      connectActiveChat();
+    });
+
+    // Ask / confirm dialog
+    $("#ask-ok").addEventListener("click", acceptAsk);
+    $("#ask-alt").addEventListener("click", function () { finishAsk("alt"); });
+    $("#ask-cancel").addEventListener("click", function () {
+      finishAsk(askPending && askPending.kind === "confirm" ? false : null);
+    });
+    $("#ask-input").addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { e.preventDefault(); acceptAsk(); }
+    });
+    $("#ask-input").addEventListener("input", function () {
+      var err = $("#ask-error");
+      if (!err.hidden) err.hidden = true;
+    });
     $("#agent-save").addEventListener("click", saveAgent);
     $("#settings-btn").addEventListener("click", function () { openModal("#settings-modal"); showStorageNote(); });
     $("#shortcuts-btn").addEventListener("click", function () { openModal("#shortcuts-modal"); });
@@ -1583,11 +1922,17 @@
     });
 
     $("#reset-btn").addEventListener("click", function () {
-      if (!confirm("Delete every saved chat, message, project and preference from this browser?\n" +
-                   "Back up first if you might want them again.")) return;
-      Store.wipe().then(function () {
-        try { localStorage.clear(); } catch (e) { /* ignore */ }
-        location.reload();
+      askConfirm("Erase everything in this browser?", {
+        body: "Every saved chat, message, project and preference is deleted. " +
+              "This cannot be undone.\n\nExport a backup first if you might want them again.",
+        ok: "Erase everything",
+        danger: true
+      }).then(function (yes) {
+        if (!yes) return;
+        return Store.wipe().then(function () {
+          try { localStorage.clear(); } catch (e) { /* ignore */ }
+          location.reload();
+        });
       });
     });
 
@@ -1721,7 +2066,7 @@
             onConnected: function (c) {
               logEvent(
                 "Connected",
-                currentAgent().name + " · " + (MODE_LABEL[state.connection.mode] || "") +
+                ((currentAgent() || {}).name || "Agent") + " · " + (MODE_LABEL[state.connection.mode] || "") +
                   (c.resumed ? " · resumed" : " · new conversation"),
                 "ok"
               );
@@ -1742,6 +2087,9 @@
           state.activeChat = chats.length ? chats[0].id : null;
         }
         renderSidebar();
+        // With no agent configured there is nothing to connect to, so land on
+        // the welcome pane rather than opening a chat that cannot be answered.
+        if (!hasAgent()) return showWelcome();
         if (!state.activeChat) return newChat();
         return connectActiveChat();
       })

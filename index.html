@@ -80,7 +80,7 @@
       <button class="icon-btn mobile-only" id="sidebar-btn" data-icon="menu" aria-label="Open menu"></button>
 
       <button class="agent-switch" id="agent-switch" aria-haspopup="menu" aria-expanded="false">
-        <span id="agent-name">Claude</span>
+        <span id="agent-name">No agent</span>
         <svg class="chev" viewBox="0 0 24 24" aria-hidden="true">
           <path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="2" fill="none"
                 stroke-linecap="round" stroke-linejoin="round"/>
@@ -191,12 +191,101 @@
         <input type="file" id="composer-file" multiple hidden>
       </section>
 
+      <!-- Shown until at least one agent has been configured. This is the
+           landing state of a fresh install: there is no seeded agent, so
+           there is nothing to connect to yet. -->
+      <section class="welcome" id="welcome-pane" hidden aria-label="Getting started">
+        <div class="welcome-inner">
+          <span class="welcome-mark">
+            <svg viewBox="0 0 32 32" aria-hidden="true">
+              <path d="M16 3l3.1 7.6L27 14l-7.9 3.4L16 25l-3.1-7.6L5 14l7.9-3.4z" fill="currentColor"/>
+            </svg>
+          </span>
+          <h1>Welcome to BIG A</h1>
+          <p class="welcome-lead">
+            A private front end for your Copilot Studio agents. Conversations are
+            rendered and stored by this page, so they stay copyable, themeable and
+            yours. Add an agent to begin.
+          </p>
+
+          <div class="welcome-acts">
+            <button class="btn btn-primary" id="welcome-add">Add your first agent</button>
+            <button class="btn btn-ghost" id="welcome-connect">Connection settings</button>
+          </div>
+
+          <ol class="welcome-steps">
+            <li>
+              <strong>Publish your agent</strong>
+              <span>In Copilot Studio, publish the agent at least once. An unpublished
+                    agent cannot accept connections.</span>
+            </li>
+            <li>
+              <strong>Copy its connection details</strong>
+              <span>Go to <em>Channels &rarr; Web app / Custom website</em> and copy the
+                    connection string or the agent URL.</span>
+            </li>
+            <li>
+              <strong>Paste it here</strong>
+              <span>Open <em>Connection settings</em>, paste it in, and the environment
+                    and schema name are worked out for you.</span>
+            </li>
+          </ol>
+
+          <p class="welcome-foot">
+            No agent to hand? You can still explore the interface &mdash; the sidebar,
+            workbench and command palette (<span class="kbd">Ctrl / Cmd + K</span>) all
+            work without a connection.
+          </p>
+        </div>
+      </section>
+
       <!-- Legacy fallback only. Kept so nobody is ever stranded, but it is no
-           longer the default: an embedded canvas cannot be styled, copied
-           from, dropped on, or persisted. -->
-      <iframe id="agent-frame" title="AI agent chat (legacy embed)" src="about:blank" hidden
-              allow="microphone; camera; clipboard-write; autoplay"
-              referrerpolicy="strict-origin-when-cross-origin"></iframe>
+           longer the default: an embedded canvas cannot be styled internally,
+           copied from, dropped on, or persisted. The chrome around it is ours,
+           so at least the frame matches the rest of the app. -->
+      <section class="embed-pane" id="embed-pane" hidden aria-label="Legacy embedded agent">
+        <div class="embed-bar">
+          <span class="embed-badge" title="This mode runs the agent's own canvas in a sandboxed frame">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 3l8 4v5c0 5-3.4 8.4-8 9.5C7.4 20.4 4 17 4 12V7z"
+                    stroke="currentColor" stroke-width="1.7" fill="none" stroke-linejoin="round"/>
+            </svg>
+            Legacy embed
+          </span>
+          <span class="embed-note" id="embed-note">Messages here are not saved to this browser</span>
+          <span class="embed-bar-acts">
+            <button class="btn btn-quiet btn-sm" id="embed-reload" type="button" title="Reload the embedded canvas">Reload</button>
+            <button class="btn btn-quiet btn-sm" id="embed-open" type="button" title="Open the agent in a new tab">Open in new tab</button>
+            <button class="btn btn-ghost btn-sm" id="embed-upgrade" type="button" title="Switch to the Agents SDK transport">Switch to full client</button>
+          </span>
+        </div>
+
+        <div class="embed-stage">
+          <div class="embed-loading" id="embed-loading">
+            <span class="spinner" aria-hidden="true"></span>
+            <span>Loading the agent&rsquo;s canvas&hellip;</span>
+          </div>
+
+          <div class="embed-blocked" id="embed-blocked" hidden>
+            <div class="embed-blocked-inner">
+              <span class="conn-ico" data-icon="lock"></span>
+              <h2>The agent would not load in a frame</h2>
+              <p id="embed-blocked-msg">
+                The agent&rsquo;s site may refuse to be embedded, or the URL may be wrong.
+                Opening it in its own tab usually works.
+              </p>
+              <div class="conn-error-acts">
+                <button class="btn btn-primary btn-sm" id="embed-open-2" type="button">Open in new tab</button>
+                <button class="btn btn-ghost btn-sm" id="embed-settings" type="button">Connection settings</button>
+              </div>
+            </div>
+          </div>
+
+          <iframe id="agent-frame" title="AI agent chat (legacy embed)" src="about:blank"
+                  allow="microphone; camera; clipboard-write; autoplay"
+                  referrerpolicy="strict-origin-when-cross-origin"></iframe>
+        </div>
+      </section>
     </div>
   </main>
 
@@ -708,6 +797,31 @@
     </span>
   </div>
   <div class="modal-body preview-body" id="preview-body"></div>
+</div>
+
+<!-- Generic ask/confirm dialog. Replaces window.prompt and window.confirm so
+     that naming a project or deleting one looks like the rest of the app
+     instead of a browser chrome box. -->
+<div class="modal modal-ask" id="ask-modal" role="dialog" aria-modal="true"
+     aria-labelledby="ask-title" aria-describedby="ask-body">
+  <div class="modal-head">
+    <h2 id="ask-title">Confirm</h2>
+    <button class="icon-btn" data-close data-icon="x" aria-label="Close"></button>
+  </div>
+  <div class="modal-body">
+    <p class="ask-text" id="ask-body" hidden></p>
+    <div class="field" id="ask-field" hidden>
+      <label for="ask-input" id="ask-label">Name</label>
+      <input type="text" id="ask-input" autocomplete="off" spellcheck="false">
+      <div class="hint" id="ask-hint" hidden></div>
+    </div>
+    <p class="ask-error" id="ask-error" role="alert" hidden></p>
+  </div>
+  <div class="modal-foot">
+    <button class="btn btn-quiet" id="ask-cancel" type="button">Cancel</button>
+    <button class="btn btn-ghost" id="ask-alt" type="button" hidden></button>
+    <button class="btn btn-primary" id="ask-ok" type="button">OK</button>
+  </div>
 </div>
 
 <div class="toasts" id="toasts" aria-live="polite"></div>
