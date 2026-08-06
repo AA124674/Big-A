@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>BIG A — your intelligent workspace</title>
+<meta name="description" content="BIG A is a conversational workspace: chat with an AI agent, build documents and charts from its replies, attach files and export everything.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='15' fill='%23C96442'/><path d='M16 7l2.6 6.4L25 16l-6.4 2.6L16 25l-2.6-6.4L7 16l6.4-2.6z' fill='%23fff'/></svg>">
+<link rel="stylesheet" href="assets/css/styles.css">
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ================================ Sidebar ============================ -->
+  <aside class="sidebar" aria-label="Workspace navigation">
+    <div class="sidebar-head">
+      <a class="brand" href="#" aria-label="BIG A home">
+        <span class="brand-mark">
+          <svg viewBox="0 0 32 32" aria-hidden="true">
+            <path d="M16 3l3.1 7.6L27 14l-7.9 3.4L16 25l-3.1-7.6L5 14l7.9-3.4z" fill="currentColor"/>
+            <circle cx="25.5" cy="6.5" r="2.2" fill="currentColor" opacity=".55"/>
+          </svg>
+        </span>
+        <span>BIG A</span>
+      </a>
+      <button class="icon-btn" id="sidebar-collapse" data-icon="panel"
+              aria-label="Collapse sidebar" title="Collapse sidebar (Ctrl+\)"></button>
+    </div>
+
+    <div class="sidebar-body">
+      <button class="new-chat" id="new-chat" data-icon="plus">New chat</button>
+
+      <div class="side-search">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2" fill="none"/>
+          <path d="m20 20-3.6-3.6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        <input type="text" id="side-search" placeholder="Search chats" aria-label="Search chats">
+      </div>
+
+      <div class="side-group">
+        <div class="side-label"><span>Recents</span></div>
+        <ul id="chat-list" class="side-list" data-project="" aria-label="Chats not in a project"></ul>
+      </div>
+
+      <div class="side-group">
+        <div class="side-label">
+          <span>Agents</span>
+          <button id="add-agent" title="Add an agent" aria-label="Add an agent">+</button>
+        </div>
+        <ul id="agent-list" class="side-list"></ul>
+      </div>
+
+      <div class="side-group">
+        <div class="side-label">
+          <span>Projects</span>
+          <button id="add-project" title="New project" aria-label="New project">+</button>
+        </div>
+        <p class="side-tip" id="project-tip">Drag a chat onto a project to file it there.</p>
+        <div id="project-list"></div>
+      </div>
+    </div>
+
+    <div class="sidebar-foot">
+      <button class="user-chip" id="settings-btn">
+        <span class="avatar">You</span>
+        <span class="user-meta">
+          <strong>Your workspace</strong>
+          <span>Settings and preferences</span>
+        </span>
+      </button>
+    </div>
+  </aside>
+
+  <!-- ============================== Chat column ========================== -->
+  <main class="chat-col">
+    <div class="topbar">
+      <button class="icon-btn mobile-only" id="sidebar-btn" data-icon="menu" aria-label="Open menu"></button>
+
+      <button class="agent-switch" id="agent-switch" aria-haspopup="menu" aria-expanded="false">
+        <span id="agent-name">Claude</span>
+        <svg class="chev" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="2" fill="none"
+                stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+
+      <!-- Connection state and the usage note now live up here, in the top
+           bar, rather than in a strip under the composer. -->
+      <span id="conn-status" class="conn-pill" title="Connection state"></span>
+
+      <span class="topbar-note hide-md">BIG A can make mistakes. Please check important information.</span>
+
+      <span class="spacer"></span>
+
+      <button class="btn btn-quiet hide-sm" id="palette-btn">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2" fill="none"/>
+          <path d="m20 20-3.6-3.6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        Commands <span class="kbd" style="margin-left:4px">Ctrl K</span>
+      </button>
+
+      <button class="icon-btn" id="reload-btn" data-icon="refresh"
+              aria-label="Restart the agent session" title="Restart session"></button>
+      <button class="icon-btn" id="zen-btn" data-icon="expand" aria-pressed="false"
+              aria-label="Toggle focus mode" title="Focus mode"></button>
+      <button class="icon-btn" id="theme-btn" aria-label="Toggle theme" title="Toggle theme"></button>
+      <button class="btn btn-ghost" id="wb-btn">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="3" y="4" width="18" height="16" rx="2" stroke="currentColor" stroke-width="1.8" fill="none"/>
+          <path d="M15 4v16" stroke="currentColor" stroke-width="1.8"/>
+        </svg>
+        <span class="hide-sm">Workbench</span>
+      </button>
+    </div>
+
+    <div class="stage">
+      <!-- The conversation is rendered by this page, not embedded from
+           another origin. That is what makes it copyable, themeable,
+           droppable and persistent. -->
+      <section class="chat-surface" id="chat-surface" aria-label="Conversation">
+
+        <div class="chat-scroll" id="chat-scroll">
+          <div class="chat-thread">
+
+            <div class="chat-empty" id="chat-empty">
+              <span class="chat-empty-mark">
+                <svg viewBox="0 0 32 32" aria-hidden="true">
+                  <path d="M16 3l3.1 7.6L27 14l-7.9 3.4L16 25l-3.1-7.6L5 14l7.9-3.4z" fill="currentColor"/>
+                </svg>
+              </span>
+              <h1 id="chat-empty-title">How can I help today?</h1>
+              <p>Ask a question, paste something in, or drop a file anywhere on this panel.</p>
+            </div>
+
+            <div id="chat-list-msgs"></div>
+
+            <div class="typing" id="chat-typing" hidden>
+              <span class="typing-dots"><i></i><i></i><i></i></span>
+              <span class="typing-label" id="chat-typing-label">Thinking&hellip;</span>
+              <span class="typing-elapsed" id="chat-typing-elapsed"></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Drop anywhere on the panel, not just on a tucked-away box. -->
+        <div class="chat-drop" id="chat-drop" aria-hidden="true">
+          <div class="chat-drop-inner">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 16V4m0 0 4 4m-4-4L8 8M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"
+                    stroke="currentColor" stroke-width="1.8" fill="none"
+                    stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <strong>Drop files to attach</strong>
+            <small>Images preview inline; text, CSV, JSON, Markdown and code are read and sent as context</small>
+          </div>
+        </div>
+
+        <div class="conn-error" id="chat-error" hidden>
+          <div class="conn-error-inner">
+            <span class="conn-ico" data-icon="lock"></span>
+            <h2 id="chat-error-title">Could not reach the agent</h2>
+            <p id="chat-error-msg"></p>
+            <div class="conn-error-acts">
+              <button class="btn btn-primary btn-sm" id="chat-retry">Try again</button>
+              <button class="btn btn-ghost btn-sm" id="conn-setup">Connection settings</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Composer -->
+        <div class="composer-wrap">
+          <div class="composer" id="composer">
+            <div class="composer-staged" id="composer-staged" hidden aria-label="Files ready to send"></div>
+            <div class="composer-row">
+              <button class="composer-btn" id="composer-attach" type="button"
+                      aria-label="Attach files" title="Attach files"></button>
+              <textarea id="composer-input" rows="1" placeholder="Reply to your agent&hellip;"
+                        aria-label="Message" autocomplete="off"></textarea>
+              <button class="composer-send" id="composer-send" type="button" aria-label="Send message"></button>
+            </div>
+          </div>
+          <p class="composer-hint">
+            <span class="kbd">Enter</span> to send · <span class="kbd">Shift + Enter</span> for a new line ·
+            drag files anywhere on this panel
+          </p>
+        </div>
+        <input type="file" id="composer-file" multiple hidden>
+      </section>
+
+      <!-- Legacy fallback only. Kept so nobody is ever stranded, but it is no
+           longer the default: an embedded canvas cannot be styled, copied
+           from, dropped on, or persisted. -->
+      <iframe id="agent-frame" title="AI agent chat (legacy embed)" src="about:blank" hidden
+              allow="microphone; camera; clipboard-write; autoplay"
+              referrerpolicy="strict-origin-when-cross-origin"></iframe>
+    </div>
+  </main>
+
+  <!-- =============================== Workbench =========================== -->
+  <aside class="workbench" aria-label="Workbench">
+    <div class="wb-head">
+      <span class="wb-title">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.4z" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linejoin="round"/></svg>
+        Workbench
+      </span>
+      <span class="chip" id="wb-agent" style="max-width:150px;overflow:hidden;text-overflow:ellipsis">Agent</span>
+      <button class="icon-btn" id="wb-close" data-icon="x" aria-label="Close workbench"></button>
+    </div>
+
+    <div class="wb-tabs" role="tablist">
+      <button class="wb-tab" role="tab" data-tab="artifact" id="tab-artifact" aria-selected="true">Artifact</button>
+      <button class="wb-tab" role="tab" data-tab="chart" id="tab-chart" aria-selected="false">Charts</button>
+      <button class="wb-tab" role="tab" data-tab="files" id="tab-files" aria-selected="false">
+        Files <span class="badge" hidden>0</span>
+      </button>
+      <button class="wb-tab" role="tab" data-tab="activity" id="tab-activity" aria-selected="false">
+        Activity <span class="badge" hidden>0</span>
+      </button>
+    </div>
+
+    <div class="wb-panels">
+
+      <!-- ---------- Artifact ---------- -->
+      <section class="wb-panel active" data-panel="artifact" role="tabpanel">
+        <div class="notice">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7" fill="none"/><path d="M12 11v5M12 8h.01" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+          <span>Press <strong>Send to workbench</strong> under any reply, or paste text here. BIG A renders it properly and lets you export it as a document.</span>
+        </div>
+
+        <div class="field">
+          <label for="artifact-title">Title</label>
+          <input type="text" id="artifact-title" placeholder="Untitled document" value="Untitled document">
+        </div>
+
+        <div class="field">
+          <label for="artifact-type">Render as</label>
+          <select id="artifact-type">
+            <option value="markdown">Markdown document</option>
+            <option value="table">Table (CSV / TSV)</option>
+            <option value="code">Code</option>
+            <option value="html">Raw HTML</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="artifact-src">Content</label>
+          <textarea id="artifact-src" spellcheck="false"
+                    placeholder="Paste the agent's reply here&hellip;"></textarea>
+        </div>
+
+        <div class="wb-toolbar">
+          <button class="btn btn-primary btn-sm" id="artifact-render">Render</button>
+          <button class="btn btn-ghost btn-sm" id="artifact-sample">Load sample</button>
+          <button class="btn btn-ghost btn-sm" id="artifact-copy">Copy source</button>
+          <button class="btn btn-ghost btn-sm" id="artifact-copy-rich">Copy as plain text</button>
+          <button class="btn btn-quiet btn-sm" id="artifact-clear">Clear</button>
+        </div>
+
+        <div class="artifact-view empty" id="artifact-view">
+          Paste a reply from the agent, then press Render.
+        </div>
+
+        <div class="cat-title">Download</div>
+        <div class="wb-toolbar" style="border-bottom:0;padding-bottom:0">
+          <button class="btn btn-ghost btn-sm" data-export="md">Markdown</button>
+          <button class="btn btn-ghost btn-sm" data-export="html">HTML</button>
+          <button class="btn btn-ghost btn-sm" data-export="txt">Plain text</button>
+          <button class="btn btn-ghost btn-sm" data-export="csv">CSV</button>
+          <button class="btn btn-ghost btn-sm" data-export="json">JSON</button>
+          <button class="btn btn-ghost btn-sm" data-export="print">PDF / print</button>
+        </div>
+      </section>
+
+      <!-- ---------- Charts ---------- -->
+      <section class="wb-panel" data-panel="chart" role="tabpanel">
+        <div class="notice">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7" fill="none"/><path d="M12 11v5M12 8h.01" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+          <span>Ask the agent for figures as CSV or JSON, paste them here, and BIG A will draw the chart. Everything renders on your machine.</span>
+        </div>
+
+        <div class="field">
+          <label for="chart-title">Chart title</label>
+          <input type="text" id="chart-title" placeholder="Untitled chart">
+        </div>
+
+        <div class="field">
+          <label for="chart-type">Chart type</label>
+          <select id="chart-type">
+            <option value="column">Column</option>
+            <option value="bar">Horizontal bar</option>
+            <option value="line">Line</option>
+            <option value="area">Area</option>
+            <option value="pie">Pie</option>
+            <option value="donut">Donut</option>
+            <option value="scatter">Scatter</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="chart-data">Data</label>
+          <textarea id="chart-data" spellcheck="false"
+                    placeholder="Region,Revenue,Target&#10;North,412000,400000&#10;South,388500,310000"></textarea>
+          <div class="hint">CSV, TSV, JSON array of objects, or "Label: value" lines. Labels first, numbers after.</div>
+        </div>
+
+        <div class="wb-toolbar">
+          <button class="btn btn-primary btn-sm" id="chart-build">Generate chart</button>
+          <button class="btn btn-ghost btn-sm" id="chart-sample">Load sample</button>
+        </div>
+
+        <div class="chart-box" id="chart-out">
+          <p style="color:var(--ink-faint);font-size:13px;font-style:italic;margin:24px 0;text-align:center">
+            Your chart will appear here.
+          </p>
+        </div>
+
+        <div class="cat-title">Download</div>
+        <div class="wb-toolbar" style="border-bottom:0;padding-bottom:0">
+          <button class="btn btn-ghost btn-sm" data-chartexp="png">PNG (2&times;)</button>
+          <button class="btn btn-ghost btn-sm" data-chartexp="svg">SVG</button>
+          <button class="btn btn-ghost btn-sm" data-chartexp="html">HTML</button>
+          <button class="btn btn-ghost btn-sm" data-chartexp="csv">CSV data</button>
+        </div>
+      </section>
+
+      <!-- ---------- Files ---------- -->
+      <section class="wb-panel" data-panel="files" role="tabpanel">
+        <div class="notice">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7" fill="none"/><path d="M12 11v5M12 8h.01" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+          <span>Drop files here to pull their text out, then press <strong>To chat</strong> to stage them on the composer. You can also drop files straight onto the conversation.</span>
+        </div>
+
+        <div class="dropzone" id="dropzone" role="button" tabindex="0">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0 4 4m-4-4L8 8M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <strong>Drop files here</strong>
+          <small>or click to browse &mdash; text, CSV, JSON, code and Markdown are read automatically</small>
+        </div>
+        <input type="file" id="file-input" multiple hidden>
+
+        <ul class="file-list" id="file-list"></ul>
+
+        <div class="wb-toolbar" id="file-actions" hidden style="margin-top:14px;border-bottom:0;padding-bottom:0">
+          <button class="btn btn-primary btn-sm" id="files-copy-all">Copy all as context</button>
+          <button class="btn btn-quiet btn-sm" id="files-clear">Clear all</button>
+        </div>
+      </section>
+
+      <!-- ---------- Activity ---------- -->
+      <section class="wb-panel" data-panel="activity" role="tabpanel">
+        <div class="notice">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7" fill="none"/><path d="M12 11v5M12 8h.01" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+          <span>A live trace of what this workspace does: sessions, renders, chart builds, downloads. It cannot see inside the agent's own conversation.</span>
+        </div>
+        <div class="wb-toolbar">
+          <button class="btn btn-ghost btn-sm" id="log-export">Export log</button>
+          <button class="btn btn-quiet btn-sm" id="log-clear">Clear</button>
+        </div>
+        <ul class="log" id="log-list"></ul>
+      </section>
+
+    </div>
+  </aside>
+</div>
+
+<!-- ============================== Agent menu ============================= -->
+<div class="menu" id="agent-menu" role="menu"></div>
+
+<!-- ================================ Overlays ============================ -->
+<div class="scrim" id="scrim"></div>
+
+<!-- Command palette -->
+<div class="modal palette" id="palette" role="dialog" aria-label="Command palette">
+  <input type="text" class="palette-input" id="palette-input"
+         placeholder="Type a command&hellip;" autocomplete="off" spellcheck="false">
+  <ul class="palette-list" id="palette-list" role="listbox"></ul>
+</div>
+
+<!-- Add agent -->
+<div class="modal" id="agent-modal" role="dialog" aria-labelledby="agent-modal-title">
+  <div class="modal-head">
+    <h2 id="agent-modal-title">Add an agent</h2>
+    <button class="icon-btn" data-close data-icon="x" aria-label="Close"></button>
+  </div>
+  <div class="modal-body">
+    <div class="notice">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7" fill="none"/><path d="M12 11v5M12 8h.01" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+      <span>Paste any Copilot Studio, Azure Bot or web chat embed URL. In Copilot Studio this is under <strong>Channels &rarr; Custom website</strong>.</span>
+    </div>
+    <div class="field">
+      <label for="agent-form-name">Display name</label>
+      <input type="text" id="agent-form-name" placeholder="e.g. HR Assistant">
+    </div>
+    <div class="field">
+      <label for="agent-form-url">Embed URL</label>
+      <input type="url" id="agent-form-url" placeholder="https://copilotstudio.microsoft.com/.../webchat?__version__=2">
+      <div class="hint">Must be an https:// address that permits embedding.</div>
+    </div>
+    <div class="field">
+      <label for="agent-form-desc">Description (optional)</label>
+      <input type="text" id="agent-form-desc" placeholder="What is this agent for?">
+    </div>
+  </div>
+  <div class="modal-foot">
+    <button class="btn btn-quiet" data-close>Cancel</button>
+    <button class="btn btn-primary" id="agent-save">Add agent</button>
+  </div>
+</div>
+
+<!-- Settings -->
+<div class="modal" id="settings-modal" role="dialog" aria-labelledby="settings-title">
+  <div class="modal-head">
+    <h2 id="settings-title">Settings</h2>
+    <button class="icon-btn" data-close data-icon="x" aria-label="Close"></button>
+  </div>
+  <div class="modal-body">
+    <div class="set-row">
+      <span class="info">
+        <strong>Send file text as context</strong>
+        <span>Read attached text, CSV, JSON and code files and include their contents with your
+          message, so the agent can use them even if it has no file handling of its own.</span>
+      </span>
+      <button class="switch" data-toggle="fileAttach" role="switch" aria-checked="true"
+              aria-label="Toggle file context"></button>
+    </div>
+    <div class="set-row">
+      <span class="info">
+        <strong>Saved conversations</strong>
+        <span id="storage-note">Checking local storage&hellip;</span>
+      </span>
+      <span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+        <button class="btn btn-ghost btn-sm" id="backup-export">Back up</button>
+        <button class="btn btn-ghost btn-sm" id="backup-import">Restore</button>
+      </span>
+    </div>
+    <input type="file" id="backup-file" accept="application/json,.json" hidden>
+    <div class="set-row">
+      <span class="info">
+        <strong>Open the workbench automatically</strong>
+        <span>Show the side panel on wide screens when the app starts.</span>
+      </span>
+      <button class="switch" data-toggle="autoOpenWorkbench" role="switch" aria-checked="true"
+              aria-label="Toggle automatic workbench"></button>
+    </div>
+    <div class="set-row">
+      <span class="info">
+        <strong>Connection &amp; sign-in</strong>
+        <span>Choose how BIG A reaches the agent. Needed if your agent requires authentication.</span>
+      </span>
+      <button class="btn btn-ghost btn-sm" id="connect-btn">Configure</button>
+    </div>
+    <div class="set-row">
+      <span class="info">
+        <strong>Keyboard shortcuts</strong>
+        <span>See every shortcut available in this workspace.</span>
+      </span>
+      <button class="btn btn-ghost btn-sm" id="shortcuts-btn">View</button>
+    </div>
+    <div class="set-row">
+      <span class="info">
+        <strong>Reset workspace</strong>
+        <span>Clear saved chats, agents, artifacts and preferences from this browser.</span>
+      </span>
+      <button class="btn btn-ghost btn-sm" id="reset-btn">Reset</button>
+    </div>
+    <p style="font-size:12.5px;color:var(--ink-muted);margin:16px 0 0;line-height:1.55">
+      Chats, projects, attachments and preferences are written to this browser's IndexedDB, so
+      they survive page closure, browser restarts and shutting the machine down. Use
+      <strong>Back up</strong> to move a workspace to another browser or computer.
+    </p>
+  </div>
+  <div class="modal-foot">
+    <button class="btn btn-primary" data-close>Done</button>
+  </div>
+</div>
+
+<!-- Connection & sign-in -->
+<div class="modal modal-lg" id="connect-modal" role="dialog" aria-labelledby="connect-title">
+  <div class="modal-head">
+    <h2 id="connect-title">Connection &amp; sign-in</h2>
+    <button class="icon-btn" data-close data-icon="x" aria-label="Close"></button>
+  </div>
+  <div class="modal-body">
+
+    <div class="notice">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7" fill="none"/><path d="M12 11v5M12 8h.01" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+      <span>Copilot Studio has retired the Direct Line <strong>token endpoint</strong> for new agents and
+      replaced it with a <strong>Microsoft 365 Agents SDK</strong> connection string. BIG A now speaks that
+      protocol directly, which is what keeps messages copyable, styled, stored and droppable. The older
+      Direct Line, single sign-on and embed modes are still here as fallbacks.</span>
+    </div>
+
+    <div class="field">
+      <label for="conn-mode">Connection mode</label>
+      <select id="conn-mode">
+        <option value="m365">Microsoft 365 Agents SDK &mdash; current, recommended</option>
+        <option value="directline">Direct Line token endpoint &mdash; legacy</option>
+        <option value="sso">Direct Line + single sign-on &mdash; legacy</option>
+        <option value="iframe">Legacy embed &mdash; fallback only, loses persistence and styling</option>
+      </select>
+      <p class="hint" id="conn-mode-hint"></p>
+    </div>
+
+    <div id="conn-fields" hidden>
+
+      <!-- Current transport: Direct-to-Engine via the Agents SDK protocol -->
+      <div id="conn-m365-fields" hidden>
+        <div class="field">
+          <label for="conn-string">Agent connection string <span class="req">easiest</span></label>
+          <textarea id="conn-string" rows="3" spellcheck="false"
+                    placeholder="EnvironmentId=...;SchemaName=...;TenantId=...;CopilotAgentType=Published"></textarea>
+          <p class="hint">Copilot Studio &rsaquo; your agent &rsaquo; <strong>Channels</strong> &rsaquo;
+            <strong>Web app</strong> or <strong>Native app</strong> &rsaquo;
+            <strong>Microsoft 365 Agents SDK</strong>. Pasting it fills in the boxes below.
+            <button class="btn btn-quiet btn-sm" id="conn-apply-string" type="button"
+                    style="margin-left:6px">Read connection string</button></p>
+        </div>
+
+        <div class="field-row">
+          <div class="field">
+            <label for="conn-env-id">Environment ID</label>
+            <input type="text" id="conn-env-id" spellcheck="false"
+                   placeholder="00000000-0000-0000-0000-000000000000">
+          </div>
+          <div class="field">
+            <label for="conn-schema">Agent schema name</label>
+            <input type="text" id="conn-schema" spellcheck="false" placeholder="cr123_myAgent">
+          </div>
+        </div>
+        <p class="hint">Both are in Copilot Studio &rsaquo; <strong>Settings</strong> &rsaquo;
+          <strong>Advanced</strong> &rsaquo; <strong>Metadata</strong>.</p>
+
+        <div class="field-row">
+          <div class="field">
+            <label for="conn-cloud">Cloud</label>
+            <select id="conn-cloud">
+              <option value="prod">Commercial (default)</option>
+              <option value="gov">US Government (GCC)</option>
+              <option value="high">US Government High</option>
+              <option value="dod">US Department of Defense</option>
+              <option value="mooncake">China (21Vianet)</option>
+              <option value="preprod">Pre-production</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="conn-agent-type">Agent type</label>
+            <select id="conn-agent-type">
+              <option value="published">Published (Dataverse-backed)</option>
+              <option value="prebuilt">Prebuilt</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="conn-direct-url">Direct connect URL <span class="req">optional</span></label>
+          <input type="url" id="conn-direct-url" spellcheck="false"
+                 placeholder="https://....environment.api.powerplatform.com/copilotstudio/dataverse-backed/authenticated/bots/...">
+          <p class="hint">Only needed if your connection string supplies a full endpoint. It overrides the
+            environment ID and schema name above.</p>
+        </div>
+
+        <p class="hint" id="conn-resolved"></p>
+      </div>
+
+      <!-- Legacy transport: Direct Line token endpoint -->
+      <div id="conn-legacy-fields" hidden>
+        <div class="field">
+          <label for="conn-token-endpoint">Token endpoint <span class="req">legacy</span></label>
+          <input type="url" id="conn-token-endpoint" spellcheck="false"
+                 placeholder="https://....environment.api.powerplatform.com/powervirtualagents/.../directline/token?api-version=...">
+          <p class="hint">Copilot Studio &rsaquo; your agent &rsaquo; <strong>Channels</strong> &rsaquo;
+            <strong>Mobile app</strong>. New agents no longer show this &mdash; if yours does not, use the
+            Agents SDK mode instead.
+            <button class="btn btn-quiet btn-sm" id="conn-detect" type="button"
+                    style="margin-left:6px">Detect automatically</button></p>
+        </div>
+      </div>
+
+      <!-- Entra ID sign-in: required by the Agents SDK, and by legacy SSO -->
+      <div id="conn-sso-fields" hidden>
+        <div class="field">
+          <label for="conn-client-id">Application (client) ID <span class="req">required</span></label>
+          <input type="text" id="conn-client-id" spellcheck="false"
+                 placeholder="00000000-0000-0000-0000-000000000000">
+          <p class="hint" id="conn-client-hint"></p>
+        </div>
+        <div class="field">
+          <label for="conn-tenant-id">Directory (tenant) ID</label>
+          <input type="text" id="conn-tenant-id" spellcheck="false" placeholder="common">
+          <p class="hint">Leave as <code>common</code> to allow any Microsoft account. The Agents SDK
+            works best with your own tenant ID.</p>
+        </div>
+        <div class="field">
+          <label for="conn-scope">Scope <span class="req">required</span></label>
+          <input type="text" id="conn-scope" spellcheck="false"
+                 placeholder="https://api.powerplatform.com/CopilotStudio.Copilots.Invoke">
+          <p class="hint">For the Agents SDK, leave the default
+            <code>https://api.powerplatform.com/CopilotStudio.Copilots.Invoke</code>. For legacy single
+            sign-on, use the scope exposed by your <strong>authentication</strong> app registration.</p>
+        </div>
+
+        <div class="conn-actions">
+          <button class="btn btn-ghost btn-sm" id="conn-signin" type="button">Sign in with Microsoft</button>
+          <button class="btn btn-quiet btn-sm" id="conn-signin-redirect" type="button">Sign in via redirect</button>
+          <button class="btn btn-quiet btn-sm" id="conn-test" type="button">Test connection</button>
+        </div>
+
+        <details class="setup-help">
+          <summary>How to set up the Microsoft 365 Agents SDK connection</summary>
+          <ol>
+            <li>In Copilot Studio, open your agent &rsaquo; <strong>Channels</strong> &rsaquo;
+              <strong>Web app</strong> (or <strong>Native app</strong>) and copy the
+              <strong>Microsoft 365 Agents SDK</strong> connection details.</li>
+            <li>In the Azure portal, register an application. Under <strong>Authentication</strong>, add a
+              <strong>Single-page application</strong> platform with this exact redirect URI:
+              <code id="conn-redirect">&mdash;</code></li>
+            <li>Under <strong>API permissions</strong>, add
+              <strong>Power Platform API</strong> &rsaquo; <strong>Delegated</strong> &rsaquo;
+              <strong>CopilotStudio.Copilots.Invoke</strong>, then grant
+              <strong>admin consent</strong>. If Power Platform API is not listed, register the
+              <code>Microsoft.PowerPlatform</code> resource provider in your tenant first.</li>
+            <li>Paste the client ID and tenant ID above, sign in, then use
+              <strong>Test connection</strong>.</li>
+            <li><strong>Publish your agent.</strong> The Agents SDK talks to the published agent, so
+              unpublished changes will not appear.</li>
+          </ol>
+          <p class="hint">Users of this page need access to the agent in Copilot Studio. There is no
+            anonymous mode: every request carries a signed-in user's token.</p>
+        </details>
+
+        <details class="setup-help">
+          <summary>How to set up legacy single sign-on</summary>
+          <p class="hint">SSO needs <strong>two</strong> separate Entra app registrations. Reusing one
+            for both will not work.</p>
+          <ol>
+            <li><strong>Authentication app</strong> &mdash; in Copilot Studio open
+              <strong>Settings &rsaquo; Security &rsaquo; Authentication</strong>, choose
+              <strong>Authenticate manually</strong> with <strong>Microsoft Entra ID V2</strong>, and
+              follow the wizard to register it. Note that
+              <strong>Authenticate with Microsoft</strong> will <em>not</em> work here &mdash; that
+              option only supports the Teams channel.</li>
+            <li><strong>Canvas app</strong> &mdash; register a second application. Under
+              <strong>Authentication</strong>, add a <strong>Single-page application</strong> platform
+              with this exact redirect URI: <code id="conn-redirect-legacy">&mdash;</code></li>
+            <li>In the <em>authentication</em> app, go to <strong>Expose an API</strong>, add a scope,
+              and copy its full value into the <strong>Custom scope</strong> box above.</li>
+            <li>Still in <strong>Expose an API</strong>, under
+              <strong>Authorized client applications</strong>, add the <em>canvas</em> app's client ID.</li>
+            <li>Back in Copilot Studio's Authentication panel, paste that same scope into
+              <strong>Token exchange URL</strong> and save.</li>
+            <li>Grant <strong>admin consent</strong> on both registrations, then
+              <strong>publish your agent</strong> &mdash; auth changes only take effect after publishing.</li>
+          </ol>
+        </details>
+      </div>
+    </div>
+
+    <div class="conn-account" id="conn-account" hidden>
+      <span class="info">
+        <strong id="conn-account-name">Not signed in</strong>
+        <span id="conn-account-mail"></span>
+      </span>
+      <button class="btn btn-ghost btn-sm" id="conn-signout">Sign out</button>
+    </div>
+
+    <p class="hint" style="margin-top:14px">
+      These details are stored only in this browser. Secure modes load Microsoft's WebChat and
+      sign-in libraries from Microsoft's own CDNs.
+    </p>
+  </div>
+  <div class="modal-foot">
+    <button class="btn btn-quiet" data-close>Cancel</button>
+    <button class="btn btn-primary" id="conn-save">Save &amp; connect</button>
+  </div>
+</div>
+
+<!-- Shortcuts -->
+<div class="modal" id="shortcuts-modal" role="dialog" aria-labelledby="shortcuts-title">
+  <div class="modal-head">
+    <h2 id="shortcuts-title">Keyboard shortcuts</h2>
+    <button class="icon-btn" data-close data-icon="x" aria-label="Close"></button>
+  </div>
+  <div class="modal-body">
+    <div class="set-row"><span class="info"><strong>Command palette</strong></span><span class="kbd">Ctrl / Cmd + K</span></div>
+    <div class="set-row"><span class="info"><strong>New chat</strong></span><span class="kbd">Ctrl / Cmd + Shift + O</span></div>
+    <div class="set-row"><span class="info"><strong>Toggle sidebar</strong></span><span class="kbd">Ctrl / Cmd + \</span></div>
+    <div class="set-row"><span class="info"><strong>Toggle workbench</strong></span><span class="kbd">Ctrl / Cmd + J</span></div>
+    <div class="set-row"><span class="info"><strong>Exit focus mode or close a dialog</strong></span><span class="kbd">Esc</span></div>
+  </div>
+  <div class="modal-foot">
+    <button class="btn btn-primary" data-close>Got it</button>
+  </div>
+</div>
+
+<!-- Full-size attachment preview -->
+<div class="modal modal-lg preview-modal" id="preview-modal" role="dialog" aria-labelledby="preview-name">
+  <div class="modal-head">
+    <span class="preview-head">
+      <strong id="preview-name">Attachment</strong>
+      <small id="preview-meta"></small>
+    </span>
+    <span class="preview-head-actions">
+      <button class="btn btn-quiet btn-sm" id="preview-download" type="button">Download</button>
+      <button class="icon-btn" id="preview-close" data-icon="x" aria-label="Close preview"></button>
+    </span>
+  </div>
+  <div class="modal-body preview-body" id="preview-body"></div>
+</div>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script src="assets/js/artifacts.js"></script>
+<script src="assets/js/store.js"></script>
+<script src="assets/js/directline.js"></script>
+<script src="assets/js/m365agents.js"></script>
+<script src="assets/js/connect.js"></script>
+<script src="assets/js/chat.js"></script>
+<script src="assets/js/app.js"></script>
+</body>
+</html>
