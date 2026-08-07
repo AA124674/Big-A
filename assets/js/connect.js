@@ -29,22 +29,53 @@
 (function (global) {
   "use strict";
 
-  var WEBCHAT_CDN = "https://cdn.botframework.com/botframework-webchat/latest/webchat.js";
-  var MSAL_CDN = "https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js";
+  /* Each library is listed with fallbacks. Microsoft's own CDNs are tried
+     first, but alcdn.msauth.net in particular is blocked by a fair number of
+     school and corporate web filters, which are less likely to have heard of
+     the public package mirrors. The libraries are byte-identical either way:
+     the mirrors serve the same published npm artefact. */
+  var WEBCHAT_CDN = [
+    "assets/vendor/webchat.js",
+    "https://cdn.botframework.com/botframework-webchat/latest/webchat.js",
+    "https://unpkg.com/botframework-webchat@latest/dist/webchat.js"
+  ];
+  var MSAL_VERSION = "2.38.3";
+
+  /* A self-hosted copy is tried before any CDN. It is not shipped, because the
+     licence is Microsoft's to redistribute and the file would go stale; but if
+     a network filter blocks every CDN, dropping the file at this path is the
+     one fix that cannot be blocked, since it is same-origin. When it is absent
+     the 404 is immediate and the CDNs are used as normal. */
+  var MSAL_CDN = [
+    "assets/vendor/msal-browser.min.js",
+    "https://alcdn.msauth.net/browser/" + MSAL_VERSION + "/js/msal-browser.min.js",
+    "https://cdn.jsdelivr.net/npm/@azure/msal-browser@" + MSAL_VERSION + "/lib/msal-browser.min.js",
+    "https://unpkg.com/@azure/msal-browser@" + MSAL_VERSION + "/lib/msal-browser.min.js"
+  ];
   var DEFAULT_DIRECTLINE = "https://directline.botframework.com/v3/directline";
 
   var loaded = {};
 
-  /** Inject a <script> once, resolving when the global it defines appears. */
-  function loadScript(url, globalName) {
-    if (loaded[url]) return loaded[url];
-    loaded[url] = new Promise(function (resolve, reject) {
-      if (globalName && global[globalName]) { resolve(global[globalName]); return; }
+  /** Inject one <script> and resolve when the global it defines appears. */
+  function injectScript(url, globalName) {
+    return new Promise(function (resolve, reject) {
       var s = document.createElement("script");
       s.src = url;
       s.async = true;
-      s.crossOrigin = "anonymous";
+      // No crossOrigin: it buys nothing without integrity hashes, and it turns
+      // an otherwise-fine response missing CORS headers into a hard failure.
+      var done = false;
+      var timer = setTimeout(function () {
+        if (done) return;
+        done = true;
+        s.parentNode && s.parentNode.removeChild(s);
+        reject(new Error("Timed out loading " + url));
+      }, 15000);
+
       s.onload = function () {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
         if (globalName && !global[globalName]) {
           reject(new Error("Loaded " + url + " but window." + globalName + " is missing."));
           return;
@@ -52,15 +83,111 @@
         resolve(globalName ? global[globalName] : true);
       };
       s.onerror = function () {
-        reject(new Error(
-          "Could not load " + url + ".\n" +
-          "Check your network connection, and any content blocker or Content-Security-Policy " +
-          "that might be blocking Microsoft CDNs."
-        ));
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        s.parentNode && s.parentNode.removeChild(s);
+        reject(new Error("Could not load " + url));
       };
       document.head.appendChild(s);
     });
-    return loaded[url];
+  }
+
+  /**
+   * Load a library, trying each mirror in turn. A failure is deliberately not
+   * cached, so pressing Sign in again after fixing the network actually
+   * retries rather than replaying the old error forever.
+   */
+  function loadScript(urls, globalName) {
+    var list = [].concat(urls);
+    var key = globalName || list[0];
+
+    if (globalName && global[globalName]) return Promise.resolve(global[globalName]);
+    if (loaded[key]) return loaded[key];
+
+    var attempt = function (i, errs) {
+      if (i >= list.length) {
+        var remote = list.filter(function (u) { return /^https?:/i.test(u); });
+        return Promise.reject(new Error(
+          "Could not load the Microsoft sign-in library from any of " + remote.length +
+          " sources.\n\n" +
+          "This is a network problem, not a problem with your Azure setup: the sign-in never " +
+          "reached Microsoft. Open Connection settings and press \u201cCheck network access\u201d " +
+          "to see which sources are blocked.\n\n" +
+          "Details: " + errs.join(" | ")
+        ));
+      }
+      return injectScript(list[i], globalName).catch(function (e) {
+        return attempt(i + 1, errs.concat([e.message]));
+      });
+    };
+
+    loaded[key] = attempt(0, []).catch(function (e) {
+      delete loaded[key];
+      throw e;
+    });
+    return loaded[key];
+  }
+
+  /**
+   * Try every source in turn and report what happened to each, so a blocked
+   * CDN can be told apart from a wrong client ID, a dead connection or an
+   * extension. Uses fetch(no-cors) purely as a reachability probe: an opaque
+   * response still proves the request left the browser and something answered.
+   */
+  function diagnose() {
+    var targets = [
+      { label: "Self-hosted copy", url: MSAL_CDN[0], optional: true },
+      { label: "Microsoft CDN", url: MSAL_CDN[1] },
+      { label: "jsDelivr mirror", url: MSAL_CDN[2] },
+      { label: "unpkg mirror", url: MSAL_CDN[3] },
+      { label: "Microsoft sign-in", url: "https://login.microsoftonline.com/common/discovery/keys" }
+    ];
+
+    return Promise.all(targets.map(function (t) {
+      var started = Date.now();
+      return Promise.race([
+        fetch(t.url, { method: "GET", mode: "no-cors", cache: "no-store" })
+          .then(function () { return { ok: true }; })
+          .catch(function (e) { return { ok: false, why: e.message || "blocked" }; }),
+        new Promise(function (res) {
+          setTimeout(function () { res({ ok: false, why: "timed out" }); }, 8000);
+        })
+      ]).then(function (r) {
+        return {
+          label: t.label, url: t.url, optional: !!t.optional,
+          ok: r.ok, why: r.why || "", ms: Date.now() - started
+        };
+      });
+    })).then(function (rows) {
+      var usable = rows.filter(function (r) { return r.ok && r.label !== "Microsoft sign-in"; });
+      var login = rows.filter(function (r) { return r.label === "Microsoft sign-in"; })[0];
+      return {
+        rows: rows,
+        canLoadLibrary: usable.length > 0,
+        canReachMicrosoft: !!(login && login.ok),
+        summary: summarise(rows, usable, login)
+      };
+    });
+  }
+
+  function summarise(rows, usable, login) {
+    if (usable.length && login && login.ok) {
+      return "Everything needed is reachable. If sign-in still fails, the problem is in the " +
+             "app registration rather than the network.";
+    }
+    if (!usable.length && login && !login.ok) {
+      return "Nothing Microsoft-related is reachable from this browser. That points at a network " +
+             "filter or a proxy covering the whole site, not at one blocked CDN.";
+    }
+    if (!usable.length) {
+      return "Every source for the sign-in library is blocked, though Microsoft itself is " +
+             "reachable. Ask for alcdn.msauth.net to be allowed, or place a copy of " +
+             "msal-browser.min.js at assets/vendor/ in the repository, which cannot be blocked " +
+             "because it is served from this same site.";
+    }
+    return "The sign-in library can be loaded, but login.microsoftonline.com is not reachable. " +
+           "Sign-in cannot work until that domain is allowed.";
   }
 
   /* ---------------------------------------------------------------- helpers */
@@ -297,6 +424,27 @@
     return msalApp.logoutPopup({ account: a }).catch(function () {});
   }
 
+  /**
+   * Drop the cached account and tokens from THIS browser only.
+   *
+   * Deliberately not `signOut`: that opens a popup and ends the session at
+   * Microsoft, which is wrong for "erase local data" and, worse, would race
+   * the page reload that follows it. This only forgets what we stored.
+   */
+  function forget() {
+    if (!msalApp) return Promise.resolve();
+    try {
+      msalApp.setActiveAccount(null);
+      (msalApp.getAllAccounts() || []).forEach(function (a) {
+        // Not present in every MSAL build, so it is guarded rather than assumed.
+        if (typeof msalApp.clearCache === "function") return;
+        try { msalApp.getTokenCache().removeAccount(a); } catch (e) { /* older build */ }
+      });
+      if (typeof msalApp.clearCache === "function") return Promise.resolve(msalApp.clearCache());
+    } catch (e) { /* nothing cached */ }
+    return Promise.resolve();
+  }
+
   /* -------------------------------------------------------------- WebChat */
 
   /** Map the BIG A palette onto WebChat so the canvas matches the page. */
@@ -471,9 +619,11 @@
     resumeRedirect: resumeRedirect,
     currentAccount: currentAccount,
     signOut: signOut,
+    forget: forget,
     DEFAULT_AGENT_SCOPE: DEFAULT_AGENT_SCOPE,
     styleOptions: styleOptions,
     loadScript: loadScript,
+    diagnose: diagnose,
     readToken: readToken,
     WEBCHAT_CDN: WEBCHAT_CDN,
     MSAL_CDN: MSAL_CDN

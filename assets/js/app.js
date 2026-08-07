@@ -101,8 +101,14 @@
     // switches above because it is a number, not a toggle.
     embedCrop: 60,
     connection: {
-      // Current transport: Copilot Studio via the Microsoft 365 Agents SDK.
-      mode: "m365",
+      // Default transport: Direct Line, drawn in our own canvas.
+      //
+      // This is the mode that needs no Azure app registration, no admin
+      // consent and no third-party script, while still giving copyable,
+      // saveable, themed messages. The Agents SDK is strictly better only
+      // for agents that require users to authenticate, which is a minority
+      // and cannot be made to work without IT involvement anyway.
+      mode: "directline",
       connectionString: "",
       environmentId: "",
       schemaName: "",
@@ -155,7 +161,18 @@
       // site was built for. Nothing creates a built-in agent any more, so drop
       // any that survive from an older install rather than leaving people
       // staring at a connection error for an agent they never chose.
-      state.agents = state.agents.filter(function (a) { return !a.builtin; });
+      //
+      // The flag alone is not enough: the very first builds seeded the agent
+      // WITHOUT marking it, so it is also matched by shape. A seeded agent is
+      // one the user never edited, carrying a name this app used to ship. A
+      // real agent someone happened to name "Claude" survives, because adding
+      // one always records `addedAt`.
+      var SEEDED_NAMES = ["claude", "big a", "biga", "demo agent", "default"];
+      state.agents = state.agents.filter(function (a) {
+        if (a.builtin) return false;
+        if (a.addedAt) return true;
+        return SEEDED_NAMES.indexOf(String(a.name || "").trim().toLowerCase()) === -1;
+      });
 
       state.activeAgent = kv.activeAgent && state.agents.some(function (a) { return a.id === kv.activeAgent; })
         ? kv.activeAgent
@@ -169,7 +186,7 @@
         });
       }
       if (["iframe", "m365", "directline", "sso"].indexOf(state.connection.mode) === -1) {
-        state.connection.mode = "m365";
+        state.connection.mode = "directline";
       }
 
       migrateConnection();
@@ -336,9 +353,9 @@
 
   var MODE_LABEL = {
     m365: "Microsoft 365 Agents SDK",
-    directline: "Direct Line (legacy)",
-    sso: "Direct Line + single sign-on (legacy)",
-    iframe: "Legacy embed"
+    directline: "Legacy \u00b7 Direct Line, native canvas",
+    sso: "Legacy \u00b7 Direct Line with single sign-on",
+    iframe: "Legacy \u00b7 embedded frame"
   };
 
   function setStatus(kind, detail) {
@@ -352,27 +369,18 @@
   }
 
   /**
-   * The legacy embed used to own a second bar of its own, directly under the
-   * top bar, which meant two rows of chrome saying overlapping things. Its
-   * badge and its buttons now live in the one top bar and appear only while
-   * that mode is in use.
+   * Keep the top bar in step with the transport in use.
+   *
+   * The frame mode once had a whole bar of its own, then a badge beside the
+   * status pill. Both were saying what the pill already says, so only the
+   * frame-specific BUTTONS remain conditional. One statement of fact, one
+   * place to read it.
    */
   function syncTopbarMode() {
-    var legacy = hasAgent() && activeMode() === "iframe";
-    var badge = $("#legacy-badge");
+    var framed = hasAgent() && activeMode() === "iframe";
     var acts = $("#legacy-acts");
-    var note = $("#topbar-note");
-    if (badge) {
-      badge.hidden = !legacy;
-      var agent = currentAgent();
-      badge.title = "Copilot Studio's own canvas, running in a frame" +
-        (agent ? " for " + agent.name : "") +
-        ". Messages in this mode are not saved to this browser.";
-    }
-    if (acts) acts.hidden = !legacy;
-    // Two advisory notes side by side is one too many; the badge wins.
-    if (note) note.hidden = legacy;
-    document.body.classList.toggle("legacy-embed", legacy);
+    if (acts) acts.hidden = !framed;
+    document.body.classList.toggle("legacy-embed", framed);
   }
 
   /** Push the chosen header crop into CSS, where the clip window reads it. */
@@ -397,6 +405,7 @@
     showPane("welcome");
     $("#agent-name").textContent = "No agent";
     $("#wb-agent").textContent = "No agent";
+    renderAgentAvatar();
     document.title = "BIG A";
     setStatus("idle", "Add an agent to get started");
     syncTopbarMode();
@@ -510,6 +519,7 @@
     Chat.setAgent(agent);
     $("#agent-name").textContent = agent.name;
     $("#wb-agent").textContent = agent.name;
+    renderAgentAvatar();
     $("#chat-empty-title").textContent = "How can I help today?";
     document.title = agent.name + " · BIG A";
     syncTopbarMode();
@@ -537,6 +547,40 @@
     }).catch(function (err) {
       setStatus("offline", err && err.message);
       logEvent("Connection failed", err && err.message, "err");
+      // The native canvas is the default, so its failure must not be a dead
+      // end. Fall back to the frame, which needs nothing but the agent URL.
+      if (conn.mode === "directline") return fallBackToFrame(agent, err);
+    });
+  }
+
+  /**
+   * Last resort for the default transport.
+   *
+   * The native canvas needs the agent to be published with security set to
+   * "No authentication". When it is not, or the school network blocks the
+   * Direct Line host, the frame usually still works, because it is the exact
+   * thing Copilot Studio's own embed code does. Rather than leaving an error
+   * on screen, switch this agent over and say so.
+   *
+   * The switch is recorded against the AGENT, not the workspace, so one
+   * stubborn agent does not drag every other agent onto the frame.
+   */
+  function fallBackToFrame(agent, err) {
+    if (!agent || !embedUrlFor(agent)) return Promise.resolve();
+
+    agent.conn = agent.conn && typeof agent.conn === "object" ? agent.conn : {};
+    if (agent.conn.mode === "iframe") return Promise.resolve();
+    agent.conn.mode = "iframe";
+
+    logEvent("Fell back to the embedded frame", (err && err.message) || "", "warn");
+    toast("Could not open the BIG A canvas for " + agent.name +
+          ", so it is using the embedded frame instead.", "warn");
+
+    return savePrefs().then(function () {
+      renderAgents();
+      renderAgentMenu();
+      syncTopbarMode();
+      return loadEmbed();
     });
   }
 
@@ -784,12 +828,18 @@
     }
     host.innerHTML = state.agents.map(function (a) {
       return '<li><button class="side-item' + (a.id === state.activeAgent ? " active" : "") +
-        '" data-agent="' + a.id + '"><span class="dot-agent"></span><span class="txt"></span>' +
-        (a.builtin ? "" : '<span class="row-acts"><span class="del" data-agentdel="' + a.id +
-          '" role="button" tabindex="0" aria-label="Remove agent">' + icon("trash") + "</span></span>") +
+        '" data-agent="' + a.id + '"><span class="txt"></span>' +
+        '<span class="row-acts"><span class="del" data-agentdel="' + a.id +
+        '" role="button" tabindex="0" aria-label="Remove agent">' + icon("trash") + "</span></span>" +
         "</button></li>";
     }).join("");
-    $$("[data-agent]", host).forEach(function (btn, i) { $(".txt", btn).textContent = state.agents[i].name; });
+    // Names and avatars are set as nodes, never interpolated into markup, so
+    // an agent named with a stray angle bracket cannot break the list.
+    $$("[data-agent]", host).forEach(function (btn, i) {
+      var a = state.agents[i];
+      btn.insertBefore(A.avatar(a, "sm"), btn.firstChild);
+      $(".txt", btn).textContent = a.name;
+    });
   }
 
   function renderSidebar() {
@@ -1432,17 +1482,21 @@
   /* --------------------------------------------------- connection & sign-in */
 
   var MODE_HINTS = {
-    m365: "Recommended. Talks to the agent directly over the Microsoft 365 Agents SDK protocol, the " +
-          "replacement for the retired token endpoint. Two things are required: the connection string " +
-          "from Copilot Studio, and an Entra ID application (client) ID to sign in with. Everything " +
-          "else below is optional. Streaming replies, file attachments and local history all work.",
-    iframe: "Simplest. Loads Copilot Studio's own chat canvas inside this page. Nothing to register, " +
-            "but the canvas keeps its own appearance, its messages cannot be copied or stored here, " +
-            "and files cannot be dropped into it.",
-    directline: "Legacy. Uses a Direct Line token endpoint, which Copilot Studio no longer issues for " +
-                "new agents. Keep this only for an existing agent that still has one.",
-    sso: "Legacy, plus single sign-on: you sign in with Microsoft up front and BIG A answers the " +
-         "agent's sign-in card for you. Requires an Entra ID app registration and a working token endpoint."
+    directline: "Recommended, and the default. Speaks to the agent over Direct Line and draws every " +
+                "message in this page, so replies can be copied, chats are saved to this browser, " +
+                "files can be dropped in, and the canvas matches the rest of the app. Nothing to " +
+                "register and no sign-in: it works with any published agent whose security is set to " +
+                "\u201cNo authentication\u201d, which is the same agent that the embed code works for. " +
+                "The address is worked out from the agent's URL.",
+    iframe: "Fallback. Loads Copilot Studio's own chat canvas inside a frame. Nothing to register, but " +
+            "the frame belongs to Microsoft's site, so its appearance cannot be changed, its messages " +
+            "cannot be copied or saved here, and files cannot be dropped into it. Use this only if the " +
+            "canvas above will not connect.",
+    m365: "For agents that require users to sign in. Uses the Microsoft 365 Agents SDK protocol and " +
+          "gives the same full canvas as the recommended mode. Needs an Entra ID app registration in " +
+          "Azure, so only choose it if your agent's security is set to authenticate users.",
+    sso: "The recommended canvas, plus single sign-on: you sign in with Microsoft up front and BIG A " +
+         "answers the agent's sign-in card for you. Needs an Entra ID app registration."
   };
 
   /** The agent the connection modal is currently editing, or null for global. */
@@ -1628,6 +1682,8 @@
     var c = scope === "agent" && agent ? effectiveConn(agent) : state.connection;
     var read = $("#conn-string-read");
     if (read) { read.textContent = ""; read.className = "hint"; }
+    var diag = $("#conn-diag");
+    if (diag) { diag.hidden = true; diag.textContent = ""; }
     $("#conn-mode").value = c.mode;
     $("#conn-string").value = c.connectionString || "";
     $("#conn-direct-url").value = c.directConnectUrl || "";
@@ -1742,6 +1798,62 @@
       .then(function () { btn.disabled = false; btn.textContent = "Detect automatically"; });
   }
 
+  /**
+   * Report which sign-in sources this network can actually reach. Written for
+   * the case where sign-in fails with nothing to go on: it separates "your
+   * network blocks the library" from "your app registration is wrong", which
+   * otherwise look identical from the user's side.
+   */
+  function runDiagnostics() {
+    var box = $("#conn-diag");
+    var btn = $("#conn-diagnose");
+    if (!box || !global.Connect || !global.Connect.diagnose) return;
+
+    var was = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "Checking…";
+    box.hidden = false;
+    box.textContent = "Checking each source…";
+
+    return global.Connect.diagnose().then(function (r) {
+      box.innerHTML = "";
+      r.rows.forEach(function (row) {
+        // A missing self-hosted copy is the norm, not a failure worth flagging.
+        var skipped = row.optional && !row.ok;
+        var div = document.createElement("div");
+        div.className = "conn-diag-row " + (skipped ? "skip" : row.ok ? "ok" : "bad");
+
+        var mark = document.createElement("span");
+        mark.className = "mark";
+        mark.textContent = skipped ? "–" : row.ok ? "✓" : "✗";
+
+        var nm = document.createElement("span");
+        nm.className = "nm";
+        nm.textContent = row.label + (skipped ? " (not installed)" : row.ok ? "" : " — " + row.why);
+
+        var ms = document.createElement("span");
+        ms.className = "ms";
+        ms.textContent = skipped ? "" : row.ms + " ms";
+
+        div.appendChild(mark); div.appendChild(nm); div.appendChild(ms);
+        box.appendChild(div);
+      });
+
+      var p = document.createElement("p");
+      p.className = "conn-diag-summary";
+      p.textContent = r.summary;
+      box.appendChild(p);
+
+      logEvent("Network check", r.canLoadLibrary ? "Sign-in library reachable" : "All sources blocked",
+        r.canLoadLibrary && r.canReachMicrosoft ? "ok" : "err");
+    }).catch(function (e) {
+      box.textContent = "The check itself failed: " + (e && e.message);
+    }).then(function () {
+      btn.disabled = false;
+      btn.textContent = was;
+    });
+  }
+
   function saveConnection() {
     var mode = $("#conn-mode").value;
     var form = readConnForm();
@@ -1817,12 +1929,88 @@
     connectActiveChat();
   }
 
+  /**
+   * Remove an agent, optionally taking its conversations with it.
+   *
+   * Chats record which agent they belong to, so "delete its chats too" is a
+   * real option rather than an all-or-nothing reset. It is offered as the
+   * third button so the safe choice stays the obvious one.
+   */
+  function removeAgent(victim) {
+    if (!victim) return Promise.resolve();
+
+    var owned = chats.filter(function (c) { return c.agent === victim.id; });
+    var last = state.agents.length === 1;
+
+    var body = last
+      ? "This is your only agent. Removing it returns you to the welcome screen."
+      : "The agent is removed from this browser.";
+    body += owned.length
+      ? "\n\nIt has " + owned.length + (owned.length === 1 ? " saved chat" : " saved chats") +
+        ", which are kept unless you choose to delete them as well."
+      : "\n\nIt has no saved chats.";
+
+    return askConfirm('Remove "' + victim.name + '"?', {
+      body: body,
+      ok: "Remove agent",
+      alt: owned.length ? "Remove and delete its chats" : "",
+      danger: true
+    }).then(function (answer) {
+      if (!answer) return null;
+
+      state.agents = state.agents.filter(function (a) { return a.id !== victim.id; });
+      if (state.activeAgent === victim.id) {
+        state.activeAgent = state.agents[0] ? state.agents[0].id : null;
+      }
+
+      // "alt" is the third button: remove the agent AND its conversations.
+      var purge = answer === "alt" && owned.length
+        ? Promise.all(owned.map(function (c) { return Store.chats.remove(c.id); }))
+            .then(refreshChats)
+            .then(function () {
+              if (owned.some(function (c) { return c.id === state.activeChat; })) {
+                state.activeChat = chats.length ? chats[0].id : null;
+              }
+            })
+        : Promise.resolve();
+
+      return purge.then(function () {
+        return savePrefs();
+      }).then(function () {
+        renderSidebar();
+        renderAgentMenu();
+        toast(answer === "alt" && owned.length
+          ? "Removed " + victim.name + " and " + owned.length +
+            (owned.length === 1 ? " chat" : " chats")
+          : "Removed " + victim.name);
+        logEvent("Agent removed", victim.name, "warn");
+        return connectActiveChat();
+      });
+    });
+  }
+
   function saveAgent() {
     var name = $("#agent-form-name").value.trim();
-    var url = $("#agent-form-url").value.trim();
-    if (!name || !url) { toast("Give the agent a name and a URL.", "err"); return; }
-    if (!/^https:\/\//i.test(url)) { toast("The URL must start with https://", "err"); return; }
-    var a = { id: uid(), name: name, url: url, desc: $("#agent-form-desc").value.trim(), builtin: false };
+    var raw = $("#agent-form-url").value.trim();
+    // Copilot Studio hands out a whole HTML document, so accept that too and
+    // keep only the address from inside it.
+    var url = A.extractUrl(raw);
+    if (!name || !raw) { toast("Give the agent a name and a URL.", "err"); return; }
+    if (!url) {
+      toast("No https:// address found. Paste the agent URL, or the whole embed code.", "err");
+      return;
+    }
+    if (url !== raw) $("#agent-form-url").value = url;
+    // `addedAt` marks this as a real, user-created agent, which is what the
+    // stale-seed cleanup in loadPrefs looks for.
+    var a = {
+      id: uid(),
+      name: name,
+      url: url,
+      desc: $("#agent-form-desc").value.trim(),
+      builtin: false,
+      addedAt: Date.now()
+    };
 
     // An agent may be pinned to its own transport at the moment it is added.
     var modeSel = $("#agent-form-mode");
@@ -1843,15 +2031,26 @@
     host.innerHTML = '<div class="menu-label">Switch agent</div>' +
       state.agents.map(function (a) {
         return '<button class="menu-item' + (a.id === state.activeAgent ? " sel" : "") + '" data-pick="' + a.id + '">' +
-          icon("bot") + '<span class="body"><span class="nm"></span><span class="sub"></span></span>' +
+          '<span class="body"><span class="nm"></span><span class="sub"></span></span>' +
           (a.id === state.activeAgent ? icon("check") : "") + "</button>";
       }).join("") +
       '<div class="menu-sep"></div><button class="menu-item" data-addagent="1">' + icon("plus") +
       "<span class='body'>Add an agent…</span></button>";
     $$("[data-pick]", host).forEach(function (btn, i) {
-      $(".nm", btn).textContent = state.agents[i].name;
-      $(".sub", btn).textContent = state.agents[i].desc || "Copilot Studio agent";
+      var a = state.agents[i];
+      btn.insertBefore(A.avatar(a), btn.firstChild);
+      $(".nm", btn).textContent = a.name;
+      $(".sub", btn).textContent = a.desc || MODE_LABEL[effectiveConn(a).mode] || "Copilot Studio agent";
     });
+  }
+
+  /** Show which agent is active, by mark as well as by name. */
+  function renderAgentAvatar() {
+    var host = $("#agent-avatar");
+    if (!host) return;
+    host.textContent = "";
+    var agent = hasAgent() ? currentAgent() : null;
+    if (agent) host.appendChild(A.avatar(agent));
   }
 
   /* ---------------------------------------------------------------- layout */
@@ -1860,12 +2059,43 @@
     var app = $(".app");
     if (window.innerWidth <= 960) app.classList.toggle("sidebar-open");
     else app.classList.toggle("sidebar-collapsed");
+    syncSidebarBtn();
   }
 
+  /** Keep the top-bar toggle describing what it will actually do next. */
+  function syncSidebarBtn() {
+    var btn = $("#sidebar-btn");
+    if (!btn) return;
+    var app = $(".app");
+    var shown = window.innerWidth <= 960
+      ? app.classList.contains("sidebar-open")
+      : !app.classList.contains("sidebar-collapsed");
+    // Focus mode hides the sidebar regardless of the collapsed class.
+    if (document.body.classList.contains("zen")) shown = false;
+    btn.setAttribute("aria-pressed", String(shown));
+    btn.setAttribute("aria-label", shown ? "Hide the sidebar" : "Show the sidebar");
+    btn.title = (shown ? "Hide sidebar" : "Show sidebar") + " (Ctrl \\)";
+  }
+
+  /**
+   * Focus mode. Hides the sidebar, the workbench and the top bar so the
+   * conversation has the whole window.
+   *
+   * The top bar is only hidden once there is somewhere else to click, which is
+   * why the floating exit chip is not optional: in the legacy frame the page
+   * has no other chrome of its own, so without the chip focus mode would be a
+   * one-way door for anyone who does not know the Esc shortcut.
+   */
   function toggleZen() {
     document.body.classList.toggle("zen");
     var on = document.body.classList.contains("zen");
     $("#zen-btn").setAttribute("aria-pressed", String(on));
+    var exit = $("#zen-exit");
+    if (exit) exit.hidden = !on;
+    syncSidebarBtn();
+    // The frame does not re-measure itself when its box changes, and the crop
+    // is expressed in pixels, so nudge it after the layout settles.
+    if (on || activeMode() === "iframe") setTimeout(applyEmbedCrop, 340);
     toast(on ? "Focus mode on — press Esc to exit" : "Focus mode off");
   }
 
@@ -1879,6 +2109,9 @@
     $("#wb-close").addEventListener("click", function () { $(".app").classList.remove("workbench-open"); });
     $("#sidebar-btn").addEventListener("click", toggleSidebar);
     $("#sidebar-collapse").addEventListener("click", toggleSidebar);
+    $("#zen-exit").addEventListener("click", toggleZen);
+    // Crossing the mobile breakpoint swaps which class means "shown".
+    window.addEventListener("resize", syncSidebarBtn);
     $("#palette-btn").addEventListener("click", openPalette);
 
     // Sidebar
@@ -1898,22 +2131,7 @@
         var victim = state.agents.filter(function (a) { return a.id === id; })[0];
         if (!victim) return;
 
-        askConfirm('Remove "' + victim.name + '"?', {
-          body: state.agents.length === 1
-            ? "This is your only agent. Removing it returns you to the welcome screen. " +
-              "Your saved chats are kept."
-            : "The agent is removed from this browser. Your saved chats are kept.",
-          ok: "Remove agent",
-          danger: true
-        }).then(function (yes) {
-          if (!yes) return;
-          state.agents = state.agents.filter(function (a) { return a.id !== id; });
-          // Guard the last-agent case: there may be nothing left to fall back to.
-          if (state.activeAgent === id) {
-            state.activeAgent = state.agents[0] ? state.agents[0].id : null;
-          }
-          savePrefs(); renderAgents(); renderAgentMenu(); connectActiveChat();
-        });
+        removeAgent(victim);
         return;
       }
       var item = e.target.closest("[data-agent]");
@@ -2137,6 +2355,7 @@
     $("#conn-signin").addEventListener("click", function () { connectSignIn(false); });
     $("#conn-signin-redirect").addEventListener("click", function () { connectSignIn(true); });
     $("#conn-test").addEventListener("click", testConnection);
+    $("#conn-diagnose").addEventListener("click", runDiagnostics);
     ["#conn-env-id", "#conn-schema", "#conn-cloud", "#conn-agent-type", "#conn-direct-url"].forEach(function (sel) {
       $(sel).addEventListener("change", syncConnFields);
     });
@@ -2177,18 +2396,44 @@
       });
     }
 
+    $("#clear-chats-btn").addEventListener("click", function () {
+      askConfirm("Delete every conversation?", {
+        body: "All chats, messages, projects and saved attachments are deleted from " +
+              "this browser. Your agents, connection settings and preferences are kept.\n\n" +
+              "This cannot be undone. Back up first if you might want them again.",
+        ok: "Delete conversations",
+        danger: true
+      }).then(function (yes) {
+        if (!yes) return;
+        // Preferences live in "kv", so it is deliberately not in this list.
+        return Store.wipe(["chats", "messages", "projects", "blobs"]).then(function () {
+          state.activeChat = null;
+          return savePrefs();
+        }).then(function () {
+          location.reload();
+        });
+      });
+    });
+
     $("#reset-btn").addEventListener("click", function () {
       askConfirm("Erase everything in this browser?", {
-        body: "Every saved chat, message, project and preference is deleted. " +
-              "This cannot be undone.\n\nExport a backup first if you might want them again.",
+        body: "Deletes every chat, message, project, attachment, agent, connection " +
+              "setting, saved Microsoft sign-in and preference. The app returns to a " +
+              "fresh install.\n\nThis cannot be undone. Back up first if you might " +
+              "want any of it again.",
         ok: "Erase everything",
         danger: true
       }).then(function (yes) {
         if (!yes) return;
-        return Store.wipe().then(function () {
-          try { localStorage.clear(); } catch (e) { /* ignore */ }
-          location.reload();
-        });
+        // Best effort: forget the Microsoft account too, so the next sign-in
+        // genuinely starts over rather than silently reusing a cached token.
+        var signOut = global.Connect && global.Connect.forget
+          ? Promise.resolve(global.Connect.forget()).catch(function () { /* not signed in */ })
+          : Promise.resolve();
+        return signOut
+          .then(function () { return Store.destroy(); })
+          .catch(function () { /* clearing is best effort; still reload */ })
+          .then(function () { location.reload(); });
       });
     });
 
@@ -2340,6 +2585,7 @@
       .then(function () { return Promise.all([refreshChats(), refreshProjects()]); })
       .then(function () {
         bindEvents();
+        syncSidebarBtn();
         if (!state.activeChat || !chats.some(function (c) { return c.id === state.activeChat; })) {
           state.activeChat = chats.length ? chats[0].id : null;
         }

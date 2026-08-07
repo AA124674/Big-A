@@ -76,10 +76,27 @@
 
   <!-- ============================== Chat column ========================== -->
   <main class="chat-col">
+    <!-- The only way out of focus mode when the legacy frame has keyboard
+         focus: Esc is swallowed by the frame's own origin and never reaches
+         this page, so a real button has to exist. -->
+    <button class="zen-exit" id="zen-exit" type="button" hidden
+            aria-label="Leave focus mode" title="Leave focus mode (Esc)">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M9 3v6H3M15 21v-6h6" stroke="currentColor" stroke-width="2" fill="none"
+              stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span>Exit focus</span>
+    </button>
+
     <div class="topbar">
-      <button class="icon-btn mobile-only" id="sidebar-btn" data-icon="menu" aria-label="Open menu"></button>
+      <!-- Always visible, at every width. The collapse control lives inside the
+           sidebar, so once the sidebar was hidden there was no way to bring it
+           back except the keyboard shortcut. This is the way back. -->
+      <button class="icon-btn" id="sidebar-btn" data-icon="menu" aria-pressed="true"
+              aria-label="Hide the sidebar" title="Hide sidebar (Ctrl \)"></button>
 
       <button class="agent-switch" id="agent-switch" aria-haspopup="menu" aria-expanded="false">
+        <span id="agent-avatar"></span>
         <span id="agent-name">No agent</span>
         <svg class="chev" viewBox="0 0 24 24" aria-hidden="true">
           <path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="2" fill="none"
@@ -91,17 +108,10 @@
            bar, rather than in a strip under the composer. -->
       <span id="conn-status" class="conn-pill" title="Connection state"></span>
 
-      <!-- Legacy embed no longer gets a second bar of its own. Its badge and
-           its controls are folded into this one, and appear only while that
-           mode is actually in use. -->
-      <span class="embed-badge topbar-embed" id="legacy-badge" hidden
-            title="This agent is running Copilot Studio's own canvas in a frame. Messages are not saved to this browser.">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M12 3l8 4v5c0 5-3.4 8.4-8 9.5C7.4 20.4 4 17 4 12V7z"
-                stroke="currentColor" stroke-width="1.7" fill="none" stroke-linejoin="round"/>
-        </svg>
-        Legacy embed
-      </span>
+      <!-- There is deliberately no second "Legacy embed" badge here. The pill
+           above already reports the transport by name, and two labels saying
+           the same thing side by side read as a warning about a warning. The
+           frame-only controls still fold into this bar, below. -->
 
       <span class="topbar-note hide-md" id="topbar-note">BIG A can make mistakes. Please check important information.</span>
 
@@ -500,20 +510,27 @@
     </div>
     <div class="field">
       <label for="agent-form-url">Agent URL or embed code</label>
-      <input type="url" id="agent-form-url" placeholder="https://copilotstudio.microsoft.com/.../webchat?__version__=2">
-      <div class="hint">Must be an https:// address. A demo-website address is converted to the
-        embeddable one automatically, so the agent appears rather than Copilot Studio&rsquo;s
-        test-site splash page.</div>
+      <!-- Deliberately type="text", not type="url": the whole point is that a
+           pasted block of embed HTML is accepted, and a url field would mark
+           that invalid before it could ever be unwrapped. -->
+      <input type="text" id="agent-form-url" spellcheck="false"
+             placeholder="https://copilotstudio.microsoft.com/.../webchat?__version__=2">
+      <div class="hint">Paste either the plain address or the whole
+        <strong>embed code</strong> that Copilot Studio gives you &mdash; the
+        <code>&lt;iframe&gt;</code> wrapper is stripped for you. A demo-website address is
+        converted to the embeddable one automatically, so the agent appears rather than
+        Copilot Studio&rsquo;s test-site splash page.</div>
     </div>
     <div class="field">
       <label for="agent-form-mode">How this agent connects</label>
       <select id="agent-form-mode">
         <option value="">Use the workspace default</option>
+        <option value="directline">Legacy &mdash; BIG A canvas (no setup)</option>
+        <option value="iframe">Legacy &mdash; Copilot Studio's own canvas in a frame</option>
         <option value="m365">Full client &mdash; Microsoft 365 Agents SDK</option>
-        <option value="iframe">Legacy embed &mdash; Copilot Studio's own canvas</option>
       </select>
       <div class="hint">Set per agent, so one agent can use the full client while another stays on
-        the legacy embed. Changeable later in Connection settings.</div>
+        a legacy transport. Changeable later in Connection settings.</div>
     </div>
     <div class="field">
       <label for="agent-form-desc">Description (optional)</label>
@@ -589,12 +606,24 @@
       </span>
       <button class="btn btn-ghost btn-sm" id="shortcuts-btn">View</button>
     </div>
-    <div class="set-row">
-      <span class="info">
-        <strong>Reset workspace</strong>
-        <span>Clear saved chats, agents, artifacts and preferences from this browser.</span>
-      </span>
-      <button class="btn btn-ghost btn-sm" id="reset-btn">Reset</button>
+    <div class="danger-zone">
+      <h3>Clear stored data</h3>
+      <div class="set-row">
+        <span class="info">
+          <strong>Clear conversations and files</strong>
+          <span>Delete every chat, message, project and attachment. Your agents,
+            connection settings and preferences are kept.</span>
+        </span>
+        <button class="btn btn-ghost btn-sm" id="clear-chats-btn">Clear chats</button>
+      </div>
+      <div class="set-row">
+        <span class="info">
+          <strong>Erase everything</strong>
+          <span>Delete all of the above <em>and</em> your agents, connection settings,
+            saved sign-in and preferences. Returns the app to a fresh install.</span>
+        </span>
+        <button class="btn btn-danger btn-sm" id="reset-btn">Erase everything</button>
+      </div>
     </div>
     <p style="font-size:12.5px;color:var(--ink-muted);margin:16px 0 0;line-height:1.55">
       Chats, projects, attachments and preferences are written to this browser's IndexedDB, so
@@ -630,10 +659,10 @@
     <div class="field">
       <label for="conn-mode">How this page reaches the agent</label>
       <select id="conn-mode">
-        <option value="m365">Full client &mdash; Microsoft 365 Agents SDK (recommended)</option>
-        <option value="iframe">Legacy embed &mdash; Copilot Studio's own canvas in a frame</option>
-        <option value="directline">Direct Line token endpoint (legacy)</option>
-        <option value="sso">Direct Line + single sign-on (legacy)</option>
+        <option value="directline">Legacy &mdash; BIG A canvas (recommended, no setup)</option>
+        <option value="iframe">Legacy &mdash; Copilot Studio's own canvas in a frame</option>
+        <option value="m365">Full client &mdash; Microsoft 365 Agents SDK (needs Azure setup)</option>
+        <option value="sso">Legacy &mdash; BIG A canvas with single sign-on</option>
       </select>
       <p class="hint" id="conn-mode-hint"></p>
     </div>
@@ -714,7 +743,12 @@
           <button class="btn btn-ghost btn-sm" id="conn-signin" type="button">Sign in with Microsoft</button>
           <button class="btn btn-quiet btn-sm" id="conn-signin-redirect" type="button">Sign in via redirect</button>
           <button class="btn btn-quiet btn-sm" id="conn-test" type="button">Test connection</button>
+          <button class="btn btn-quiet btn-sm" id="conn-diagnose" type="button"
+                  title="Check whether this network can reach the sign-in library and Microsoft">Check network access</button>
         </div>
+
+        <!-- Filled in by the network check. Kept out of the way until used. -->
+        <div class="conn-diag" id="conn-diag" hidden></div>
 
         <div class="conn-account" id="conn-account" hidden>
           <span class="info">
@@ -752,26 +786,40 @@
         </details>
       </section>
 
-      <!-- ============ Legacy: Direct Line token endpoint ============ -->
+      <!-- ============ Legacy: native Direct Line canvas ============ -->
       <section class="conn-step" id="conn-legacy-fields" hidden>
         <header class="conn-step-head">
           <span class="conn-step-no">1</span>
           <span class="conn-step-title">
-            <strong>Direct Line token endpoint</strong>
-            <small>Required for this legacy mode.</small>
+            <strong>Nothing to fill in</strong>
+            <small>The address is worked out from the agent&rsquo;s URL. Just press Test.</small>
           </span>
         </header>
-        <div class="field">
-          <label for="conn-token-endpoint">Token endpoint</label>
-          <input type="url" id="conn-token-endpoint" spellcheck="false"
-                 placeholder="https://....environment.api.powerplatform.com/powervirtualagents/.../directline/token?api-version=...">
-          <div class="conn-inline-acts">
-            <button class="btn btn-ghost btn-sm" id="conn-detect" type="button">Detect automatically</button>
+
+        <p class="hint">This mode needs only two things, and both are usually already true:
+          the agent is <strong>published</strong>, and its security is set to
+          <strong>No authentication</strong> (Copilot Studio &rsaquo; <strong>Settings</strong>
+          &rsaquo; <strong>Security</strong> &rsaquo; <strong>Authentication</strong>). That is
+          the same requirement as the ready-made embed code, so if the embed works, this works
+          and gives you a far better canvas.</p>
+
+        <!-- A distinct class from #conn-advanced below, which is a different
+             disclosure with its own show/hide rules. -->
+        <details class="conn-optional">
+          <summary>Optional &mdash; set the token endpoint by hand</summary>
+          <div class="field">
+            <label for="conn-token-endpoint">Token endpoint</label>
+            <input type="url" id="conn-token-endpoint" spellcheck="false"
+                   placeholder="Leave blank to work it out automatically">
+            <div class="conn-inline-acts">
+              <button class="btn btn-ghost btn-sm" id="conn-detect" type="button">Detect automatically</button>
+            </div>
+            <p class="hint">Leave this empty unless automatic detection fails. If you do need it,
+              it is in Copilot Studio &rsaquo; <strong>Channels</strong> &rsaquo;
+              <strong>Mobile app</strong> &rsaquo; <strong>Token Endpoint</strong>. Not every agent
+              shows that channel; automatic detection does not depend on it.</p>
           </div>
-          <p class="hint">Copilot Studio &rsaquo; your agent &rsaquo; <strong>Channels</strong> &rsaquo;
-            <strong>Mobile app</strong>. Agents created recently no longer show one &mdash; if yours does
-            not, use the full client instead.</p>
-        </div>
+        </details>
       </section>
 
       <!-- ============ Legacy embed notes ============ -->

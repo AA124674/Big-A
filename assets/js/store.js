@@ -386,8 +386,73 @@
     });
   }
 
-  function wipe() {
-    return Promise.all(STORES.map(clearStore));
+  /**
+   * Empty the data stores but keep the database itself. Used by the
+   * "clear conversations" path, which must leave preferences alone.
+   *
+   * @param {string[]} [names] Stores to empty. Defaults to all of them.
+   */
+  function wipe(names) {
+    var list = Array.isArray(names) && names.length ? names : STORES;
+    return Promise.all(list.map(clearStore));
+  }
+
+  /**
+   * Remove every trace of this workspace from the browser.
+   *
+   * Emptying the object stores is not enough on its own. A workspace also
+   * leaves data in four other places, and anything left behind reappears on
+   * the next load, which is exactly the surprise "clear everything" is meant
+   * to prevent:
+   *
+   *   * the IndexedDB database itself, so nothing survives in a store that a
+   *     later version of the schema might add back;
+   *   * localStorage, which holds the text fallback AND the Microsoft sign-in
+   *     library's cached accounts and tokens;
+   *   * sessionStorage, which holds in-flight sign-in state;
+   *   * the Cache Storage API, in case the site is ever served by a worker.
+   *
+   * Every step is best effort and independent: a browser that forbids one of
+   * them (private windows commonly do) must not prevent the others.
+   */
+  function destroy() {
+    var jobs = [];
+
+    // Empty first. If deleting the database is blocked by another open tab,
+    // this at least guarantees the contents are gone.
+    jobs.push(wipe().catch(noop));
+
+    jobs.push(new Promise(function (resolve) {
+      if (!global.indexedDB) { resolve(); return; }
+      try { if (db) db.close(); } catch (e) { noop(); }
+      db = null;
+      readyPromise = null;
+
+      var req;
+      try { req = global.indexedDB.deleteDatabase(DB_NAME); }
+      catch (e) { resolve(); return; }
+
+      req.onsuccess = function () { resolve(); };
+      req.onerror = function () { resolve(); };
+      // Another tab still holds the database open. The stores were already
+      // emptied above, so this is not worth blocking the reload for.
+      req.onblocked = function () { resolve(); };
+      setTimeout(resolve, 3000);
+    }));
+
+    jobs.push(Promise.resolve().then(function () {
+      try { localStorage.clear(); } catch (e) { noop(); }
+      try { sessionStorage.clear(); } catch (e) { noop(); }
+    }));
+
+    jobs.push(Promise.resolve().then(function () {
+      if (!global.caches || !global.caches.keys) return null;
+      return global.caches.keys()
+        .then(function (keys) { return Promise.all(keys.map(function (k) { return global.caches.delete(k); })); })
+        .catch(noop);
+    }));
+
+    return Promise.all(jobs).then(function () { usingFallback = false; });
   }
 
   function usage() {
@@ -408,6 +473,7 @@
     exportAll: exportAll,
     importAll: importAll,
     wipe: wipe,
+    destroy: destroy,
     usage: usage,
     onRemoteChange: onRemoteChange,
     isFallback: function () { return usingFallback; }

@@ -280,9 +280,18 @@
 
     var head = document.createElement("header");
     head.className = "msg-head";
+
+    var name = msg.role === "user" ? "You" : (msg.agentName || (agent && agent.name) || "Assistant");
+
+    // The agent's mark sits beside its name, so with more than one agent in
+    // the workspace it is obvious which one produced a given reply.
+    if (msg.role !== "user" && A.avatar) {
+      head.appendChild(A.avatar({ name: name, icon: agent && agent.icon }, "sm"));
+    }
+
     var who = document.createElement("span");
     who.className = "msg-who";
-    who.textContent = msg.role === "user" ? "You" : (msg.agentName || (agent && agent.name) || "Assistant");
+    who.textContent = name;
     head.appendChild(who);
     var time = document.createElement("time");
     time.className = "msg-time";

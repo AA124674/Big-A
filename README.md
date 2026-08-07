@@ -4,31 +4,55 @@ A static, single-page front end for a Microsoft Copilot Studio agent. It is
 plain HTML, CSS and JavaScript — no build step, no framework, no server, no
 dependencies. Drop the folder into a GitHub Pages repository and it runs.
 
-## What changed, and why
+## Start here: which mode should I use?
 
-Copilot Studio has **retired the Direct Line "Token endpoint"** that older
-custom canvases (including earlier versions of this app) relied on. Agents
-created or republished now expose a **Microsoft 365 Agents SDK connection
-string** on the Channels page instead, and are reached over a different
-protocol — *Direct-to-Engine*.
+**Legacy (native canvas) is the default and needs no setup at all.** Add an
+agent, paste its URL, and it works. Try that first. Everything below is only
+relevant if it does not.
 
-BIG A now speaks that protocol natively. The older modes are still here as
-fallbacks, because Microsoft still supports Direct Line for scenarios the
-Agents SDK does not cover.
-
-| Mode | Status | Use it when |
+| Mode | Setup needed | Notes |
 | --- | --- | --- |
-| **Microsoft 365 Agents SDK** | Current, default | Always, unless something below applies |
-| **Direct Line token endpoint** | Legacy | Your existing agent still shows a token endpoint and you do not want to change anything |
-| **Direct Line + single sign-on** | Legacy | As above, and the agent requires user authentication |
-| **Legacy embed (iframe)** | Fallback | Nothing else works and you just need the agent on screen |
+| **Legacy (native canvas)** — default | None | Speaks Direct Line directly and draws the conversation itself. Requires only that the agent is **published** and its security is **No authentication**. |
+| **Legacy embed (iframe)** | None | Copilot Studio's own canvas in a frame. Automatic fallback. Everything below about styling and history does **not** apply to it. |
+| **Microsoft 365 Agents SDK** | Azure app registration | Use when the agent requires users to sign in, or when its security is not "No authentication". |
+| **Direct Line + single sign-on** | Azure app registration | Older equivalent of the row above. |
 
-Everything the interface can do is unchanged or better: local history,
-drag-and-drop uploads, file thumbnails and full previews, chart and table
-rendering, copy-a-message and copy-the-whole-conversation, the command palette
-and the workbench.
+### Why the default matters
+
+The two "legacy" options are very different things, and the difference decides
+what the app can do for you:
+
+- **Native canvas** renders every message as part of this page. So you get the
+  Claude styling, per-message copy buttons, saved history that survives a
+  reload, drag-and-drop file uploads, the workbench, and search.
+- **Embed (iframe)** loads Copilot Studio's canvas from another origin. The
+  browser's same-origin policy means this page **cannot** restyle its interior,
+  read its text, copy its messages, or save its history. Those are not missing
+  features; they are forbidden by the browser and no amount of code changes it.
+
+If the native canvas cannot connect, the app switches **that agent** to the
+frame automatically and tells you. Nothing is lost, but you drop to the
+restricted experience above.
+
+### Modes are per agent
+
+Each agent remembers its own mode. One agent can use the native canvas while
+another uses the Agents SDK. Set it when adding the agent, or in
+**Connection settings** with the target set to that agent.
+
+## Adding an agent
+
+**Settings → Add an agent**, or the switcher in the top bar.
+
+In the URL box you can paste **either** the plain address **or** the entire
+embed code that Copilot Studio gives you. The `<iframe>` wrapper is stripped
+automatically and only the address is kept, so there is no need to hunt for the
+`src` by hand.
 
 ## Setup: the Microsoft 365 Agents SDK
+
+Only needed for the two sign-in modes. If the default legacy mode connects, you
+can skip this whole section — no Azure registration is required.
 
 This is a one-time job with three parts: get the connection string, register an
 app so people can sign in, and publish the agent.
@@ -118,10 +142,26 @@ BIG A turns the common failures into plain English, but for reference:
 | `AADSTS50011` | The redirect URI in the app registration does not match where the site is hosted, exactly |
 | `AADSTS65001` | Admin consent is outstanding |
 | Sign-in window never opens | The browser blocked the popup — use **Sign in via redirect** instead |
+| `Could not load the Microsoft sign-in library` | A network filter or content blocker is blocking the CDN. Press **Check network access** in Connection settings to see exactly which sources are reachable, then either allow `alcdn.msauth.net` or self-host the file (see `assets/vendor/README.md`) |
 | Nothing happens on the Channels page | Your agent predates the change; use the legacy Direct Line mode |
 | The embed shows "I'm your new agent" and prompt cards | That is Copilot Studio's demo site, not your agent. BIG A rewrites the URL to the embeddable canvas automatically; if you still see it, the agent's URL points somewhere other than `/environments/{id}/bots/{schema}/...` |
 | No **Embed code** offered in Copilot Studio | Embed code is only shown while the agent's **Security → Authentication** is set to **No authentication** |
 | A strip of the embed is cut off, or its header still shows | Adjust **Hide embedded header** in Settings. It defaults to 60px |
+
+### If your network blocks the sign-in library
+
+Sign-in needs `msal-browser.min.js`, which BIG A loads from Microsoft's CDN.
+Some school and corporate filters block `alcdn.msauth.net` because it is an
+unfamiliar domain, which stops sign-in before it ever reaches Microsoft.
+
+BIG A tries four sources in order: a self-hosted copy, Microsoft's CDN, then the
+jsDelivr and unpkg mirrors. **Check network access** in Connection settings
+reports which of them this network can reach, and whether
+`login.microsoftonline.com` is reachable at all.
+
+If every source is blocked, self-hosting is the fix that cannot be blocked:
+download `msal-browser.min.js` on any unrestricted machine and commit it to
+`assets/vendor/`. See `assets/vendor/README.md` for the exact URL and filename.
 
 ## Known limitations
 
@@ -131,18 +171,26 @@ These are real constraints, not oversights:
   multipart upload endpoint the way Direct Line did, so files travel inline as
   data URLs. Text that BIG A can read is also extracted and sent alongside the
   prompt, so large text files still work in substance if not in form.
-- **No anonymous access.** Every visitor needs a Microsoft account with access
-  to the agent. If you need an unauthenticated public chat, that is what the
-  legacy embed mode is for.
-- **The legacy embed cannot be restyled.** Its contents belong to
-  `copilotstudio.microsoft.com`, and the browser's same-origin policy forbids
-  reaching into another origin's document. No CSS, script or setting can change
-  its typography, colours or layout, and there is no supported theming
-  parameter. BIG A does the two things that *are* possible: it loads the
-  embeddable canvas rather than the demo site, and it crops the canvas's own
-  header out of sight behind this app's top bar (**Settings → Hide embedded
-  header**). For an interface that actually matches the rest of the app, the
-  Agents SDK mode is the only route.
+  This limit applies to the Agents SDK mode. The native legacy canvas uploads
+  through Direct Line's attachment endpoint and is not capped this way.
+- **The Agents SDK mode has no anonymous access.** Every visitor needs a
+  Microsoft account with access to the agent. For an unauthenticated public
+  chat, use either legacy mode.
+- **The legacy *embed* cannot be restyled, copied from, or saved.** Its contents
+  belong to `copilotstudio.microsoft.com`, and the browser's same-origin policy
+  forbids reaching into another origin's document. No CSS, script or setting can
+  change its typography, colours or layout; nothing can read its messages to
+  copy them; and nothing can persist its history. This is enforced by the
+  browser, not a gap in this app.
+
+  BIG A does the three things that *are* possible: it loads the embeddable
+  canvas rather than the demo site, it gives the frame the full pane, and it
+  crops the canvas's own header out of sight behind this app's top bar
+  (**Settings → Hide embedded header**).
+
+  **The fix is to not use the frame.** The default legacy mode draws the
+  conversation itself and therefore has none of these restrictions. The frame
+  exists only as a fallback.
 - **Web search, charts and tools are agent-side features.** BIG A renders their
   output and reports their progress, but cannot switch them on — configure
   those in Copilot Studio.
@@ -167,21 +215,45 @@ on the other machine.
 If IndexedDB is unavailable (a private window, or a hardened browser), the app
 falls back to localStorage automatically and says so in Settings.
 
+### Clearing it
+
+**Settings → Danger zone** has two options, and they differ in an important way:
+
+| Button | Removes | Keeps |
+| --- | --- | --- |
+| **Clear chats** | Every conversation, message, project and attachment | Your agents, connection settings, theme and preferences |
+| **Erase everything** | All of the above, *plus* agents, settings, the cached Microsoft sign-in, and the database itself | Nothing |
+
+**Erase everything** is thorough on purpose. Clearing the records alone left
+data behind in localStorage, sessionStorage and the browser cache, so it now
+deletes the IndexedDB database outright and clears all three of those too. It
+also signs you out locally. The page reloads to a clean install.
+
+Use it if an old build left an agent behind that you never added.
+
 ## Keyboard
 
 | Shortcut | Action |
 | --- | --- |
 | `Ctrl/Cmd + K` | Command palette |
+| `Ctrl/Cmd + \` | Show or hide the sidebar |
+| `Ctrl/Cmd + J` | Show or hide the workbench |
+| `Ctrl/Cmd + Shift + O` | New chat |
 | `Enter` | Send |
 | `Shift + Enter` | New line |
 | `Esc` | Close a dialog or preview, or leave focus mode |
+
+`Esc` does not reach this page while the legacy *embed* has keyboard focus,
+because the frame belongs to another origin and swallows the key. That is why
+focus mode always shows an **Exit focus** button in the corner.
 
 ## Layout
 
 | Area | What it does |
 | --- | --- |
 | Sidebar | Recents, Agents, Projects. Drag a chat onto a project to file it; drag it back to Recents to unfile it. |
-| Top bar | Agent switcher (shows the agent's own name), connection state, and the usage note. Hover the connection pill for the transport in use and what the agent is currently doing. |
+| Top bar | Sidebar toggle, agent switcher (with the agent's mark and name), connection state, and the usage note. Hover the connection pill for the transport in use and what the agent is currently doing. |
+| Focus mode | Hides the sidebar, workbench **and** top bar so the conversation has the whole window. Leave it with `Esc` or the corner button. |
 | Conversation | Native messages, streamed as they are written. Hover one to copy it, send it to the workbench, retry it or delete it. Click an attachment for a full preview. Drop files anywhere on the panel. |
 | Workbench | Renders markdown artifacts, tables and charts, and extracts text from files. |
 

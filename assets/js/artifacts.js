@@ -492,6 +492,50 @@
     return s.join("");
   }
 
+  /* ----------------------------------------------------- URL from any paste */
+
+  /**
+   * Pull the agent's address out of whatever the user pasted.
+   *
+   * Copilot Studio hands people a whole HTML document on the Channels page,
+   * so that is what gets pasted far more often than a bare URL. Rather than
+   * rejecting it, dig the src out. Handles, in order of preference:
+   *   - a full <iframe src="..."> document or snippet
+   *   - any src="..." or href="..." attribute
+   *   - a bare https:// URL sitting in surrounding prose
+   * Returns "" when there is no URL to find, so callers can fall back to
+   * their own validation message.
+   */
+  function extractUrl(raw) {
+    var text = String(raw || "").trim();
+    if (!text) return "";
+
+    // Already a clean single URL: leave it exactly as it is.
+    if (/^https:\/\/\S+$/i.test(text)) return text;
+
+    // Entities survive copy/paste from rendered pages, so &amp; must go back
+    // to & or the query string breaks.
+    function decode(s) {
+      return s.replace(/&amp;/gi, "&").replace(/&#38;/g, "&")
+              .replace(/&quot;/gi, '"').replace(/&#39;/g, "'")
+              .replace(/&lt;/gi, "<").replace(/&gt;/gi, ">");
+    }
+
+    var m = text.match(/<iframe\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/i);
+    if (!m) m = text.match(/\b(?:src|href)\s*=\s*["']([^"']+)["']/i);
+    if (m) {
+      var attr = decode(m[1]).trim();
+      if (/^https:\/\//i.test(attr)) return attr;
+    }
+
+    // Bare URL in prose. Stop at whitespace, quotes, angle brackets, and at
+    // trailing sentence punctuation that is almost never part of a URL.
+    m = text.match(/https:\/\/[^\s"'<>)\]]+/i);
+    if (m) return decode(m[0]).replace(/[.,;:]+$/, "");
+
+    return "";
+  }
+
   /* --------------------------------------------------------------- exports */
 
   function download(filename, content, mime) {
@@ -571,11 +615,90 @@
     return out.join("\n");
   }
 
+  /* --------------------------------------------------------- agent avatars */
+
+  /* Six tints drawn from the app's own palette, so an avatar never introduces
+     a colour the rest of the interface does not already use. */
+  var AVATAR_TINTS = [
+    { bg: "#C96442", fg: "#FFFFFF" },
+    { bg: "#3F8F5F", fg: "#FFFFFF" },
+    { bg: "#4A6FA5", fg: "#FFFFFF" },
+    { bg: "#8A6318", fg: "#FFFFFF" },
+    { bg: "#7A5AA6", fg: "#FFFFFF" },
+    { bg: "#2F7E86", fg: "#FFFFFF" }
+  ];
+
+  /**
+   * A stable tint for a name. The same agent must keep the same colour across
+   * reloads and between the sidebar, the top bar and every message, so this
+   * hashes the name rather than storing or randomising anything.
+   */
+  function avatarTint(name) {
+    var s = String(name || "");
+    var h = 0;
+    for (var i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+    return AVATAR_TINTS[Math.abs(h) % AVATAR_TINTS.length];
+  }
+
+  /**
+   * Up to two initials for a name: "HR Assistant" gives "HA", "Chatgpt" gives
+   * "C". Falls back to a dot rather than an empty circle.
+   *
+   * Uses Array.from so a name starting with an emoji or a non-BMP character
+   * yields that whole character instead of half a surrogate pair.
+   */
+  function initials(name) {
+    var words = String(name || "").trim().split(/[\s._-]+/).filter(Boolean);
+    if (!words.length) return "\u00b7";
+    var first = Array.from(words[0])[0] || "";
+    var second = words.length > 1 ? (Array.from(words[1])[0] || "") : "";
+    return (first + second).toUpperCase();
+  }
+
+  /**
+   * An avatar element for an agent. Returns a real node rather than a string
+   * so callers never have to think about escaping a user-supplied name.
+   *
+   * @param {{name?: string, icon?: string}} agent
+   * @param {string} [size] "sm" | "md" | "lg"
+   */
+  function avatar(agent, size) {
+    var name = (agent && agent.name) || "Agent";
+    var el = document.createElement("span");
+    el.className = "avatar" + (size ? " avatar-" + size : "");
+    el.setAttribute("aria-hidden", "true");
+
+    // A custom image wins when the agent has one; otherwise initials.
+    if (agent && agent.icon) {
+      var img = document.createElement("img");
+      img.src = agent.icon;
+      img.alt = "";
+      // A broken or blocked image would otherwise leave a torn-page glyph.
+      img.addEventListener("error", function () {
+        el.removeChild(img);
+        el.textContent = initials(name);
+      });
+      el.appendChild(img);
+    } else {
+      el.textContent = initials(name);
+    }
+
+    var tint = avatarTint(name);
+    el.style.background = tint.bg;
+    el.style.color = tint.fg;
+    el.title = name;
+    return el;
+  }
+
   /* ---------------------------------------------------------------- export */
 
   global.Artifacts = {
     esc: esc,
     slug: slug,
+    avatar: avatar,
+    avatarTint: avatarTint,
+    initials: initials,
+    extractUrl: extractUrl,
     stamp: stamp,
     markdown: markdown,
     highlight: highlight,
