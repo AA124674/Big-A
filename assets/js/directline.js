@@ -39,7 +39,24 @@
    * `discoverTokenEndpoint` tries each one and keeps the first that works.
    * If none do, the UI asks for the endpoint directly — a one-time step.
    */
-  function candidateEndpoints(embedUrl) {
+  /** True when an environment segment is the "Default-{tenantId}" alias. */
+  function isDefaultAlias(envRaw) {
+    return /^Default-/i.test(String(envRaw || ""));
+  }
+
+  /**
+   * Read the environment segment out of a Copilot Studio URL, if present.
+   * Exposed so the UI can warn about the default-environment alias below.
+   */
+  function environmentSegment(embedUrl) {
+    var u;
+    try { u = new URL(embedUrl); } catch (e) { return ""; }
+    var parts = u.pathname.split("/").filter(Boolean);
+    var i = parts.indexOf("environments");
+    return i === -1 ? "" : decodeURIComponent(parts[i + 1] || "");
+  }
+
+  function candidateEndpoints(embedUrl, envIdOverride) {
     var out = [];
     var u;
     try { u = new URL(embedUrl); } catch (e) { return out; }
@@ -53,10 +70,18 @@
     var schema = decodeURIComponent(parts[botIdx + 1] || "");
     if (!envRaw || !schema) return out;
 
-    // "Default-xxxxxxxx-...." is an environment *name*; the ID is the GUID.
     var envIds = [];
+
+    // An explicitly supplied environment ID always wins. This is not a nicety:
+    // for the DEFAULT environment the URL reads "Default-{tenantId}", and the
+    // tenant ID is NOT the environment ID. Stripping the prefix therefore
+    // yields a GUID of the right shape that maps to a host which simply does
+    // not exist, so the request fails with no useful explanation. The only
+    // reliable source is Copilot Studio, Settings > Advanced > Metadata.
+    if (envIdOverride) envIds.push(String(envIdOverride).trim());
+
     envIds.push(envRaw);
-    if (/^Default-/i.test(envRaw)) envIds.push(envRaw.replace(/^Default-/i, ""));
+    if (isDefaultAlias(envRaw)) envIds.push(envRaw.replace(/^Default-/i, ""));
 
     envIds.forEach(function (id) {
       var hex = id.replace(/-/g, "").toLowerCase();
@@ -95,14 +120,32 @@
     var opts = { method: "GET", headers: {} };
     if (bearer) opts.headers.Authorization = "Bearer " + bearer;
 
-    return fetch(endpoint, opts).then(function (res) {
+    return fetch(endpoint, opts).catch(function (netErr) {
+      // fetch() rejects (rather than resolving with !ok) for DNS failures and
+      // for CORS rejections. The browser deliberately hides which, so say so
+      // instead of pretending it was an HTTP error.
+      var e = new Error("Could not reach the token endpoint. The host may not exist, " +
+        "or the browser blocked the request (CORS).");
+      e.handled = true;
+      e.network = true;
+      e.cause = netErr;
+      throw e;
+    }).then(function (res) {
       if (!res.ok) {
         var hint = "";
-        if (res.status === 401 || res.status === 403) {
-          hint = " The agent appears to require sign-in. Switch the connection mode to " +
-                 "single sign-on and supply an Entra ID client ID.";
+        if (res.status === 400) {
+          // The overwhelmingly common cause: this endpoint exists but does not
+          // know this agent, because the agent lives on the newer service and
+          // this was the older host (or vice versa). It is a "wrong door"
+          // answer, not a problem with the agent.
+          hint = " That endpoint does not recognise this agent, which usually means the " +
+                 "address was guessed wrongly rather than anything being wrong with the agent.";
+        } else if (res.status === 401 || res.status === 403) {
+          hint = " The agent requires sign-in. Either set its security to " +
+                 "\u201CNo authentication\u201D in Copilot Studio, or switch this agent to the " +
+                 "Microsoft 365 Agents SDK mode.";
         } else if (res.status === 404) {
-          hint = " That token endpoint does not exist. Copy it again from Copilot Studio: " +
+          hint = " No such token endpoint. If you have one, copy it from Copilot Studio: " +
                  "Settings \u203A Channels \u203A Mobile app \u203A Token Endpoint.";
         } else if (res.status >= 500) {
           hint = " The service failed to respond. This is usually temporary.";
@@ -128,21 +171,62 @@
    * Try each candidate endpoint in turn. Resolves with the endpoint that
    * produced a token, so it can be remembered and reused.
    */
-  function discoverTokenEndpoint(embedUrl, bearer) {
-    var list = candidateEndpoints(embedUrl);
+  /**
+   * How much a failure tells us, so the reported error is the informative one.
+   *
+   * This matters more than it looks. The candidates are tried newest host
+   * first, legacy host last, and the legacy host answers 400 for any agent it
+   * does not host. Reporting the LAST error therefore buried the real answer
+   * under a meaningless "HTTP 400" every single time a modern agent was used.
+   */
+  function errorRank(err) {
+    var s = err && err.status;
+    if (s === 401 || s === 403) return 5;  // definitive: it exists, sign in
+    if (s === 404) return 4;               // definitive: wrong address
+    if (s >= 500) return 3;                // definitive: their fault
+    if (err && err.network) return 2;      // could not even ask
+    if (s === 400) return 1;               // "wrong door", least informative
+    return 2;
+  }
+
+  function discoverTokenEndpoint(embedUrl, bearer, envId) {
+    var list = candidateEndpoints(embedUrl, envId);
     if (!list.length) return Promise.reject(new Error("No token endpoint could be derived from that agent URL."));
 
-    var lastErr = null;
+    // Said up front, because it is the single most common reason discovery
+    // fails and it is invisible from the error the network returns.
+    var defaultEnvHint = !envId && isDefaultAlias(environmentSegment(embedUrl))
+      ? " This agent is in the DEFAULT environment, whose URL shows \u201CDefault-\u201D followed by " +
+        "your tenant ID rather than the environment ID, so the address cannot be worked out from " +
+        "the URL alone. Paste the Environment ID from Copilot Studio: Settings \u203A Advanced \u203A " +
+        "Metadata."
+      : "";
+
+    var best = null;
+    var attempts = [];
     return list.reduce(function (chain, endpoint) {
       return chain.then(function (found) {
         if (found) return found;
         return fetchToken(endpoint, bearer)
           .then(function (token) { return { endpoint: endpoint, token: token }; })
-          .catch(function (err) { lastErr = err; return null; });
+          .catch(function (err) {
+            attempts.push({ endpoint: endpoint, error: err.message, status: err.status || 0 });
+            if (!best || errorRank(err) > errorRank(best)) best = err;
+            return null;
+          });
       });
     }, Promise.resolve(null)).then(function (found) {
       if (found) return found;
-      throw lastErr || new Error("Could not reach any Direct Line token endpoint.");
+      var e = best || new Error("Could not reach any Direct Line token endpoint.");
+      if (defaultEnvHint && e.message.indexOf("Environment ID") === -1) {
+        e.message += defaultEnvHint;
+        e.needsEnvId = true;
+      }
+      // Carry the full picture so the UI can show what was actually tried,
+      // rather than a single status code with no context.
+      e.attempts = attempts;
+      e.handled = true;
+      throw e;
     });
   }
 
@@ -413,10 +497,19 @@
    *         userId, onActivity, onStatus, onError }
    */
   function connect(opts) {
+    // A configured endpoint is tried first, but is not allowed to be the only
+    // attempt. Endpoints get saved once and then go stale when an agent is
+    // republished, and previously that left the agent permanently unreachable
+    // with no way to recover short of clearing the setting by hand.
     var endpointStep = opts.tokenEndpoint
       ? fetchToken(opts.tokenEndpoint, opts.bearer)
           .then(function (token) { return { endpoint: opts.tokenEndpoint, token: token }; })
-      : discoverTokenEndpoint(opts.agentUrl, opts.bearer);
+          .catch(function (err) {
+            if (!opts.agentUrl) throw err;
+            return discoverTokenEndpoint(opts.agentUrl, opts.bearer, opts.envId)
+              .catch(function () { throw err; });
+          })
+      : discoverTokenEndpoint(opts.agentUrl, opts.bearer, opts.envId);
 
     return endpointStep.then(function (found) {
       return regionalDomain(found.endpoint).then(function (domain) {
@@ -444,6 +537,8 @@
     fetchToken: fetchToken,
     discoverTokenEndpoint: discoverTokenEndpoint,
     candidateEndpoints: candidateEndpoints,
+    environmentSegment: environmentSegment,
+    isDefaultAlias: isDefaultAlias,
     regionalDomain: regionalDomain,
     DEFAULT_DOMAIN: DEFAULT_DOMAIN
   };

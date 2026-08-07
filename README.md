@@ -147,6 +147,31 @@ BIG A turns the common failures into plain English, but for reference:
 | The embed shows "I'm your new agent" and prompt cards | That is Copilot Studio's demo site, not your agent. BIG A rewrites the URL to the embeddable canvas automatically; if you still see it, the agent's URL points somewhere other than `/environments/{id}/bots/{schema}/...` |
 | No **Embed code** offered in Copilot Studio | Embed code is only shown while the agent's **Security → Authentication** is set to **No authentication** |
 | A strip of the embed is cut off, or its header still shows | Adjust **Hide embedded header** in Settings. It defaults to 60px |
+| `Token endpoint returned HTTP 400` on the native canvas | Almost always the default-environment trap below, not a fault in the agent |
+
+### The default-environment trap
+
+The native canvas works out the token address from the agent's URL. That works
+because the URL contains the environment ID:
+
+```
+/environments/{environment-id}/bots/{schema}/webchat
+```
+
+Except in the **default environment**, where the URL reads
+`Default-{tenant-id}`. That is the environment's *alias*, and the tenant ID is
+a completely different GUID from the environment ID. The address derived from
+it points at a host that does not exist, so the request fails with nothing
+useful to say. The legacy fallback host then answers `400` for an agent it
+does not host, and that `400` is what used to get reported.
+
+The fix is one box. In Copilot Studio open **Settings › Advanced › Metadata**
+and copy the **Environment ID**, then paste it into Connection settings.
+BIG A detects the `Default-` alias and shows the box automatically, so if the
+box is not on screen, this is not your problem.
+
+The same environment ID is used by the Agents SDK mode, so filling in either
+box fills in both.
 
 ### If your network blocks the sign-in library
 

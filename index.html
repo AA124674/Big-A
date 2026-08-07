@@ -25,8 +25,9 @@
         </span>
         <span>BIG A</span>
       </a>
-      <button class="icon-btn" id="sidebar-collapse" data-icon="panel"
-              aria-label="Collapse sidebar" title="Collapse sidebar (Ctrl+\)"></button>
+      <!-- There is deliberately no collapse button here. The top-bar toggle
+           does the same job and, unlike this one, stays reachable once the
+           sidebar is hidden. Two controls for one state was just confusing. -->
     </div>
 
     <div class="sidebar-body">
@@ -120,8 +121,11 @@
       <span class="topbar-embed-acts" id="legacy-acts" hidden>
         <button class="btn btn-quiet btn-sm hide-md" id="embed-open" type="button"
                 title="Open this agent in its own browser tab">Open in new tab</button>
-        <button class="btn btn-ghost btn-sm" id="embed-upgrade" type="button"
-                title="Switch this agent to the Microsoft 365 Agents SDK transport">Use full client</button>
+        <!-- "Use full client" lived here and has been removed. It offered a
+             one-click switch to a mode that cannot work without an Azure app
+             registration, so for most people it only produced a new error.
+             Changing transport belongs in Connection settings, where the
+             requirements are stated before the switch is made. -->
       </span>
 
       <button class="btn btn-quiet hide-sm" id="palette-btn">
@@ -802,6 +806,22 @@
           &rsaquo; <strong>Security</strong> &rsaquo; <strong>Authentication</strong>). That is
           the same requirement as the ready-made embed code, so if the embed works, this works
           and gives you a far better canvas.</p>
+
+        <!-- Shown by app.js only when the agent sits in the DEFAULT environment,
+             where the URL carries the tenant ID instead of the environment ID and
+             so the address genuinely cannot be worked out. -->
+        <div class="conn-callout warn" id="conn-legacy-envid" hidden>
+          <strong>This agent needs one box filled in.</strong>
+          <p>Its URL says <code>Default-&hellip;</code>, which is the environment&rsquo;s
+            <em>alias</em>, not its ID, so the address cannot be worked out from the URL alone.
+            In Copilot Studio open <strong>Settings</strong> &rsaquo; <strong>Advanced</strong>
+            &rsaquo; <strong>Metadata</strong> and copy the <strong>Environment ID</strong>.</p>
+          <div class="field">
+            <label for="conn-legacy-env-id">Environment ID</label>
+            <input type="text" id="conn-legacy-env-id" spellcheck="false"
+                   placeholder="00000000-0000-0000-0000-000000000000">
+          </div>
+        </div>
 
         <!-- A distinct class from #conn-advanced below, which is a different
              disclosure with its own show/hide rules. -->

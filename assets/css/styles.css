@@ -534,7 +534,13 @@ ul.side-list.drop-target { padding-top: 4px; padding-bottom: 4px; }
   padding: 24px;
 }
 .conn-error[hidden] { display: none; }
-.conn-error-inner { max-width: 430px; text-align: center; }
+.conn-error-inner { max-width: 480px; text-align: center; }
+/* The message can carry a newline-separated list of the addresses that were
+   tried, so newlines have to survive and long hosts have to wrap. */
+#chat-error-msg {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
 .conn-ico {
   display: inline-flex;
   width: 42px; height: 42px;
@@ -600,6 +606,21 @@ body.zen .workbench,
 body.zen .topbar { display: none; }
 body.zen .app { grid-template-columns: 0 minmax(0, 1fr) 0 !important; }
 body.zen .stage { padding: 0; }
+
+/* Removing the top bar changes the height of every box below it. The frame is
+   absolutely positioned against .embed-clip, so if any ancestor in that chain
+   fails to resolve a height the frame collapses and the pane goes blank. These
+   are belt and braces: state the chain explicitly rather than relying on flex
+   basis resolution surviving a mid-layout display:none. */
+body.zen .chat-col,
+body.zen .stage,
+body.zen .embed-pane,
+body.zen .embed-stage { min-height: 0; height: auto; }
+body.zen .stage,
+body.zen .embed-pane,
+body.zen .embed-stage,
+body.zen .embed-clip { flex: 1 1 auto; }
+body.zen .chat-col { height: 100%; }
 
 .zen-exit {
   position: fixed;
@@ -2197,6 +2218,19 @@ body.zen .stage { padding: 0; }
 
 /* An optional-settings disclosure inside a step. Closed by default, so the
    step reads as "nothing to do here" until someone goes looking. */
+/* Shown only when a setting genuinely cannot be derived, so it is allowed to
+   be loud. */
+.conn-callout {
+  margin: 12px 0 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  background: var(--paper-2, rgba(0, 0, 0, .02));
+}
+.conn-callout p { margin: 6px 0 0; font-size: 13px; color: var(--ink-soft); }
+.conn-callout .field { margin-top: 10px; }
+
 .conn-optional { margin-top: 12px; }
 .conn-optional > summary {
   cursor: pointer;

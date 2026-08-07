@@ -918,6 +918,7 @@
     return global.DirectLine.connect({
       agentUrl: agent && agent.url,
       tokenEndpoint: opts.tokenEndpoint || chat.tokenEndpoint || (agent && agent.tokenEndpoint) || "",
+      envId: opts.envId || (agent && agent.environmentId) || "",
       bearer: opts.bearer || null,
       conversationId: chat.transport === "directline" ? chat.conversationId : null,
       watermark: chat.transport === "directline" ? chat.watermark : null,
@@ -936,7 +937,22 @@
 
   function showError(err) {
     els.error.hidden = false;
-    $("#chat-error-msg").textContent = err && err.message ? err.message : String(err);
+    var msg = err && err.message ? err.message : String(err);
+
+    // When endpoint discovery failed, the single headline status code is not
+    // enough to act on. List what was actually tried, so the difference
+    // between "wrong address" and "agent needs sign-in" is visible.
+    if (err && err.attempts && err.attempts.length) {
+      msg += "\n\nTried " + err.attempts.length +
+        (err.attempts.length === 1 ? " address:" : " addresses:");
+      err.attempts.forEach(function (a) {
+        var host = a.endpoint;
+        try { host = new URL(a.endpoint).host; } catch (e) { /* keep it raw */ }
+        msg += "\n  " + host + " — " + (a.status ? "HTTP " + a.status : "unreachable");
+      });
+    }
+
+    $("#chat-error-msg").textContent = msg;
   }
 
   /** Shown before any connection exists, so the composer is not a dead end. */

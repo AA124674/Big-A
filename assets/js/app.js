@@ -383,9 +383,19 @@
     document.body.classList.toggle("legacy-embed", framed);
   }
 
-  /** Push the chosen header crop into CSS, where the clip window reads it. */
+  /**
+   * Push the chosen header crop into CSS, where the clip window reads it.
+   *
+   * The crop only makes sense while the top bar exists: it slides Copilot
+   * Studio's own header up so that OUR bar covers it. Focus mode hides our
+   * bar, so keeping the crop would shear the top off the agent's canvas and
+   * leave a blank strip with nothing covering it. In focus mode the crop is
+   * therefore forced to zero, which is what made focus mode look broken in
+   * the legacy frame.
+   */
   function applyEmbedCrop() {
     var px = Math.max(0, Math.min(200, Number(state.embedCrop) || 0));
+    if (document.body.classList.contains("zen")) px = 0;
     document.documentElement.style.setProperty("--embed-crop", px + "px");
   }
 
@@ -542,7 +552,10 @@
       return Chat.open(state.activeChat, {
         transport: "directline",
         bearer: bearer,
-        tokenEndpoint: conn.tokenEndpoint || ""
+        tokenEndpoint: conn.tokenEndpoint || "",
+        // Load-bearing for default environments, whose URL carries the tenant
+        // ID rather than the environment ID.
+        envId: conn.environmentId || ""
       });
     }).catch(function (err) {
       setStatus("offline", err && err.message);
@@ -1517,6 +1530,17 @@
     $("#conn-legacy-fields").hidden = !needsLegacy;
     $("#conn-signin-fields").hidden = !needsSignIn;
     $("#conn-iframe-fields").hidden = mode !== "iframe";
+
+    // Only nag for the environment ID when it is actually unobtainable from
+    // the URL, which is exactly the default-environment case.
+    var envCallout = $("#conn-legacy-envid");
+    if (envCallout) {
+      var a = currentAgent();
+      var dl = global.DirectLine;
+      var isDefaultEnv = !!(a && a.url && dl && dl.isDefaultAlias &&
+        dl.isDefaultAlias(dl.environmentSegment(a.url)));
+      envCallout.hidden = !needsLegacy || !isDefaultEnv;
+    }
     // Advanced settings only mean anything to the two direct transports.
     var adv = $("#conn-advanced");
     if (adv) adv.hidden = mode === "iframe";
@@ -1587,7 +1611,9 @@
     return {
       connectionString: $("#conn-string").value.trim(),
       directConnectUrl: $("#conn-direct-url").value.trim(),
-      environmentId: $("#conn-env-id").value.trim(),
+      // Two boxes, one setting. The SDK step and the native step both need the
+      // environment ID, and nobody should have to type it twice.
+      environmentId: $("#conn-env-id").value.trim() || $("#conn-legacy-env-id").value.trim(),
       schemaName: $("#conn-schema").value.trim(),
       cloud: $("#conn-cloud").value,
       agentType: $("#conn-agent-type").value,
@@ -1688,6 +1714,7 @@
     $("#conn-string").value = c.connectionString || "";
     $("#conn-direct-url").value = c.directConnectUrl || "";
     $("#conn-env-id").value = c.environmentId || "";
+    $("#conn-legacy-env-id").value = c.environmentId || "";
     $("#conn-schema").value = c.schemaName || "";
     $("#conn-cloud").value = c.cloud || "prod";
     $("#conn-agent-type").value = c.agentType || "published";
@@ -1785,7 +1812,7 @@
     }
     btn.disabled = true;
     btn.textContent = "Detecting…";
-    global.DirectLine.discoverTokenEndpoint(agent.url, null)
+    global.DirectLine.discoverTokenEndpoint(agent.url, null, $("#conn-legacy-env-id").value.trim())
       .then(function (found) {
         $("#conn-token-endpoint").value = found.endpoint;
         toast("Found a working token endpoint");
@@ -1793,7 +1820,15 @@
       })
       .catch(function (err) {
         toast("Could not detect it automatically — paste it from Copilot Studio.", "err");
-        logEvent("Endpoint detection failed", err.message, "warn");
+        // Log every address tried, not just the headline. Which ones failed,
+        // and how, is the whole diagnosis.
+        var detail = err.message;
+        if (err.attempts && err.attempts.length) {
+          detail += " Tried: " + err.attempts.map(function (a) {
+            return a.endpoint + " (" + (a.status ? "HTTP " + a.status : "unreachable") + ")";
+          }).join("; ");
+        }
+        logEvent("Endpoint detection failed", detail, "warn");
       })
       .then(function () { btn.disabled = false; btn.textContent = "Detect automatically"; });
   }
@@ -2093,9 +2128,9 @@
     var exit = $("#zen-exit");
     if (exit) exit.hidden = !on;
     syncSidebarBtn();
-    // The frame does not re-measure itself when its box changes, and the crop
-    // is expressed in pixels, so nudge it after the layout settles.
-    if (on || activeMode() === "iframe") setTimeout(applyEmbedCrop, 340);
+    // The crop depends on whether the top bar is present, so it has to be
+    // recomputed on every entry and exit, not only for the frame.
+    applyEmbedCrop();
     toast(on ? "Focus mode on — press Esc to exit" : "Focus mode off");
   }
 
@@ -2108,7 +2143,6 @@
     $("#wb-btn").addEventListener("click", toggleWorkbench);
     $("#wb-close").addEventListener("click", function () { $(".app").classList.remove("workbench-open"); });
     $("#sidebar-btn").addEventListener("click", toggleSidebar);
-    $("#sidebar-collapse").addEventListener("click", toggleSidebar);
     $("#zen-exit").addEventListener("click", toggleZen);
     // Crossing the mobile breakpoint swaps which class means "shown".
     window.addEventListener("resize", syncSidebarBtn);
@@ -2293,22 +2327,6 @@
     $("#embed-open").addEventListener("click", openEmbedTab);
     $("#embed-open-2").addEventListener("click", openEmbedTab);
     $("#embed-settings").addEventListener("click", function () { openConnectModal(); });
-    $("#embed-upgrade").addEventListener("click", function () {
-      // Switching transport is now the agent's business, not the workspace's.
-      var agent = currentAgent();
-      if (agent) {
-        agent.conn = agent.conn && typeof agent.conn === "object" ? agent.conn : {};
-        agent.conn.mode = "m365";
-        savePrefs();
-        renderAgents();
-        renderAgentMenu();
-      } else {
-        state.connection.mode = "m365";
-        savePrefs();
-      }
-      openConnectModal({ scope: agent ? "agent" : "global" });
-      toast("Switched this agent to the Agents SDK. Finish the two required steps to connect.");
-    });
 
     // Ask / confirm dialog
     $("#ask-ok").addEventListener("click", acceptAsk);
@@ -2356,9 +2374,17 @@
     $("#conn-signin-redirect").addEventListener("click", function () { connectSignIn(true); });
     $("#conn-test").addEventListener("click", testConnection);
     $("#conn-diagnose").addEventListener("click", runDiagnostics);
-    ["#conn-env-id", "#conn-schema", "#conn-cloud", "#conn-agent-type", "#conn-direct-url"].forEach(function (sel) {
+    ["#conn-env-id", "#conn-legacy-env-id", "#conn-schema", "#conn-cloud",
+      "#conn-agent-type", "#conn-direct-url"].forEach(function (sel) {
       $(sel).addEventListener("change", syncConnFields);
     });
+    // Keep the two environment ID boxes in step, so filling either one is enough.
+    [["#conn-env-id", "#conn-legacy-env-id"], ["#conn-legacy-env-id", "#conn-env-id"]]
+      .forEach(function (pair) {
+        $(pair[0]).addEventListener("input", function () {
+          $(pair[1]).value = this.value;
+        });
+      });
     $$("#conn-setup").forEach(function (b) {
       b.addEventListener("click", function () { openConnectModal(); });
     });
