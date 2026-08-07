@@ -61,8 +61,9 @@
 
   /**
    * Turn an environment ID into the environment's API hostname.
-   * "e0a762aa-f74f-473a-b086-4ceaefb71fbd" becomes
-   * "e0a762aaf74f473ab0864ceaefb71f.bd.environment.api.powerplatform.com".
+   * "00000000-1111-2222-3333-444444444444" becomes
+   * "0000000011112222333344444444.44.environment.api.powerplatform.com":
+   * the dashes are stripped and the last few characters become the sub-domain.
    */
   function environmentHost(environmentId, cloud) {
     var info = cloudInfo(cloud);
@@ -112,6 +113,27 @@
     var text = String(input || "").trim();
     if (!text) return out;
 
+    /* An HTML snippet — the "Embed code" from Channels arrives as a whole
+       <iframe src="..."> block, or even a full page. Pull the URLs out of it
+       and treat those as the input, so the user can paste what they copied
+       rather than surgically extracting the address first. */
+    if (/<\s*(iframe|html|body|script)\b/i.test(text) || /src\s*=\s*["']https?:/i.test(text)) {
+      var urls = text.match(/https?:\/\/[^\s"'<>()]+/gi) || [];
+      var picked = urls.filter(function (u) {
+        return /copilotstudio|powerplatform|powervirtualagents/i.test(u);
+      })[0] || urls[0];
+      if (picked) return normalise(fromUrl(out, picked.replace(/&amp;/gi, "&")));
+    }
+
+    /* A pasted "Session details" panel, or any block of "Label: value" lines.
+       Copilot Studio's own diagnostics page reports the tenant, environment
+       and route this way, and it is the quickest thing to hand for most
+       people, so it is accepted verbatim. */
+    if (/^\s*[A-Za-z][A-Za-z0-9 ()/.-]{2,40}:\s*\S/m.test(text) && !/^[A-Za-z]+=/.test(text)) {
+      var labelled = readLabelledBlock(text, out);
+      if (labelled) return normalise(out);
+    }
+
     /* JSON object */
     if (/^[[{]/.test(text)) {
       try {
@@ -142,6 +164,55 @@
 
     if (!sawPair && /^https?:\/\//i.test(text)) fromUrl(out, text);
     return normalise(out);
+  }
+
+  /**
+   * Read "Label: value" lines (the shape of Copilot Studio's Session details
+   * panel). Returns true when something usable was found, so the caller knows
+   * not to fall through to the key=value parser.
+   */
+  function readLabelledBlock(text, out) {
+    var found = false;
+    String(text).split(/[\r\n]+/).forEach(function (line) {
+      var m = /^\s*([A-Za-z][A-Za-z0-9 ()/._-]{2,40}?)\s*:\s*(.+?)\s*$/.exec(line);
+      if (!m) return;
+      var label = m[1].trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+      var value = m[2].trim();
+      if (!value || /^not available$/i.test(value)) return;
+
+      // A route or instance URL carries the identifiers in its path.
+      if (label === "route" || label === "uiorigin" || label === "instanceurl" ||
+          label === "apilocation" || label === "hostname") {
+        if (/^\/?environments\//i.test(value)) {
+          fromUrl(out, "https://copilotstudio.microsoft.com" + (value.charAt(0) === "/" ? "" : "/") + value);
+          found = true;
+        }
+        return;
+      }
+      if (label === "environment" || label === "environmentname" || label === "username" ||
+          label === "sessionid" || label === "objectid" || label === "useragent" ||
+          label === "timestamp" || label === "theme") return;
+
+      if (label === "environmentid") {
+        out.environmentId = value.replace(/^Default-/i, "");
+        found = true;
+        return;
+      }
+      if (label === "tenantid") { out.tenantId = value; found = true; return; }
+      if (label === "schemaname" || label === "agentschemaname" || label === "botschemaname") {
+        out.schemaName = value; found = true; return;
+      }
+      if (label === "clusterenvironment" || label === "clustercategory") {
+        if (/preprod|test/i.test(value)) { out.cloud = "preprod"; found = true; }
+        return;
+      }
+      if (label === "connectionstring") {
+        var inner = parseConnection(value);
+        Object.keys(inner).forEach(function (k) { if (inner[k] && !out[k]) out[k] = inner[k]; });
+        found = true;
+      }
+    });
+    return found;
   }
 
   function assign(out, key, value) {
@@ -208,6 +279,75 @@
   /** True when we have enough to build a base URL. */
   function isConfigured(settings) {
     return !!baseUrl(settings);
+  }
+
+  /* ------------------------------------------------------- legacy embed URL */
+
+  /**
+   * Normalise any Copilot Studio address into the *custom website* web chat
+   * canvas — the one meant for embedding.
+   *
+   * This matters because the two URLs look almost identical but behave very
+   * differently. The demo/test site (".../canvas", ".../demo",
+   * ".../webchat/demo", or a webchat URL missing cliAgent) renders Copilot
+   * Studio's marketing splash: the "I'm your new agent" hero, the prompt
+   * cards and a floating chat box. The custom-website canvas
+   * (".../bots/{schema}/webchat?__version__=2&cliAgent=true") renders only
+   * the conversation, which is what belongs inside this app.
+   *
+   * Anything that is not a recognisable Copilot Studio address is returned
+   * untouched, so Azure Bot Service and third-party canvases still work.
+   *
+   * opts: { fileAttachment: boolean }
+   */
+  function webChatUrl(input, opts) {
+    opts = opts || {};
+    var raw = String(input || "").trim();
+    if (!raw) return "";
+
+    var u;
+    try { u = new URL(raw); } catch (e) { return raw; }
+    // Copilot Studio has been through several hostnames: powerva and
+    // powervirtualagents URLs are still handed out by older agents and are the
+    // same canvas underneath, so normalise those too.
+    if (!/copilotstudio|powerva|powervirtualagents/i.test(u.hostname)) {
+      return raw;
+    }
+
+    var parts = u.pathname.split("/").filter(Boolean);
+    var envIdx = parts.indexOf("environments");
+    var botIdx = parts.indexOf("bots");
+    if (envIdx === -1 || botIdx === -1 || !parts[envIdx + 1] || !parts[botIdx + 1]) {
+      return raw; // an unfamiliar shape: leave it exactly as the user gave it
+    }
+
+    var env = parts[envIdx + 1];
+    var schema = parts[botIdx + 1];
+
+    // Everything after ".../bots/{schema}" is the canvas selector. Replace it
+    // with "webchat" so /canvas, /demo and /webchat/demo all land on the
+    // embeddable canvas.
+    u.pathname = "/" + parts.slice(0, envIdx).concat(["environments", env, "bots", schema, "webchat"]).join("/");
+
+    // Query parameters the user added (agent variables, locale) are kept;
+    // only the ones that select the canvas mode are forced.
+    u.searchParams.set("__version__", "2");
+    u.searchParams.set("cliAgent", "true");
+    u.searchParams.set("enableFileAttachment", opts.fileAttachment ? "true" : "false");
+    ["demo", "isDemo", "demoWebsite", "showSplash", "welcome"].forEach(function (k) {
+      u.searchParams.delete(k);
+    });
+
+    return u.toString();
+  }
+
+  /** True when the given URL is Copilot Studio's demo/test website. */
+  function isDemoUrl(input) {
+    var u;
+    try { u = new URL(String(input || "")); } catch (e) { return false; }
+    if (!/copilotstudio|powerva|powervirtualagents/i.test(u.hostname)) return false;
+    return /\/(canvas|demo)(\/|$)/i.test(u.pathname) ||
+           (/\/webchat(\/|$)/i.test(u.pathname) && u.searchParams.get("cliAgent") !== "true");
   }
 
   /* ------------------------------------------------------------ SSE parser */
@@ -576,6 +716,8 @@
     baseUrl: baseUrl,
     environmentHost: environmentHost,
     isConfigured: isConfigured,
+    webChatUrl: webChatUrl,
+    isDemoUrl: isDemoUrl,
     scopeForCloud: scopeForCloud,
     CLOUDS: CLOUDS,
     API_VERSION: API_VERSION

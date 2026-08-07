@@ -13,7 +13,7 @@
 
 <div class="app">
 
-  <!-- ================================ Sidebar ============================ --> 
+  <!-- ================================ Sidebar ============================ -->
   <aside class="sidebar" aria-label="Workspace navigation">
     <div class="sidebar-head">
       <a class="brand" href="#" aria-label="BIG A home">
@@ -91,9 +91,28 @@
            bar, rather than in a strip under the composer. -->
       <span id="conn-status" class="conn-pill" title="Connection state"></span>
 
-      <span class="topbar-note hide-md">BIG A can make mistakes. Please check important information.</span>
+      <!-- Legacy embed no longer gets a second bar of its own. Its badge and
+           its controls are folded into this one, and appear only while that
+           mode is actually in use. -->
+      <span class="embed-badge topbar-embed" id="legacy-badge" hidden
+            title="This agent is running Copilot Studio's own canvas in a frame. Messages are not saved to this browser.">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 3l8 4v5c0 5-3.4 8.4-8 9.5C7.4 20.4 4 17 4 12V7z"
+                stroke="currentColor" stroke-width="1.7" fill="none" stroke-linejoin="round"/>
+        </svg>
+        Legacy embed
+      </span>
+
+      <span class="topbar-note hide-md" id="topbar-note">BIG A can make mistakes. Please check important information.</span>
 
       <span class="spacer"></span>
+
+      <span class="topbar-embed-acts" id="legacy-acts" hidden>
+        <button class="btn btn-quiet btn-sm hide-md" id="embed-open" type="button"
+                title="Open this agent in its own browser tab">Open in new tab</button>
+        <button class="btn btn-ghost btn-sm" id="embed-upgrade" type="button"
+                title="Switch this agent to the Microsoft 365 Agents SDK transport">Use full client</button>
+      </span>
 
       <button class="btn btn-quiet hide-sm" id="palette-btn">
         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -221,13 +240,16 @@
             </li>
             <li>
               <strong>Copy its connection details</strong>
-              <span>Go to <em>Channels &rarr; Web app / Custom website</em> and copy the
-                    connection string or the agent URL.</span>
+              <span>Open the agent and go to its <em>Channels</em> page, then
+                    <em>Web app</em> or <em>Native app</em>, and copy the connection string
+                    shown under <em>Microsoft 365 Agents SDK</em>. If you cannot find Channels,
+                    <em>Settings &rarr; Advanced &rarr; Metadata</em> lists the Environment ID,
+                    Tenant ID and Schema name, which work just as well.</span>
             </li>
             <li>
               <strong>Paste it here</strong>
-              <span>Open <em>Connection settings</em>, paste it in, and the environment
-                    and schema name are worked out for you.</span>
+              <span>Open <em>Connection settings</em> and paste it into the first box. The
+                    environment and schema name are worked out for you.</span>
             </li>
           </ol>
 
@@ -244,23 +266,7 @@
            copied from, dropped on, or persisted. The chrome around it is ours,
            so at least the frame matches the rest of the app. -->
       <section class="embed-pane" id="embed-pane" hidden aria-label="Legacy embedded agent">
-        <div class="embed-bar">
-          <span class="embed-badge" title="This mode runs the agent's own canvas in a sandboxed frame">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M12 3l8 4v5c0 5-3.4 8.4-8 9.5C7.4 20.4 4 17 4 12V7z"
-                    stroke="currentColor" stroke-width="1.7" fill="none" stroke-linejoin="round"/>
-            </svg>
-            Legacy embed
-          </span>
-          <span class="embed-note" id="embed-note">Messages here are not saved to this browser</span>
-          <span class="embed-bar-acts">
-            <button class="btn btn-quiet btn-sm" id="embed-reload" type="button" title="Reload the embedded canvas">Reload</button>
-            <button class="btn btn-quiet btn-sm" id="embed-open" type="button" title="Open the agent in a new tab">Open in new tab</button>
-            <button class="btn btn-ghost btn-sm" id="embed-upgrade" type="button" title="Switch to the Agents SDK transport">Switch to full client</button>
-          </span>
-        </div>
-
-        <div class="embed-stage">
+        <div class="embed-stage" id="embed-stage">
           <div class="embed-loading" id="embed-loading">
             <span class="spinner" aria-hidden="true"></span>
             <span>Loading the agent&rsquo;s canvas&hellip;</span>
@@ -281,9 +287,16 @@
             </div>
           </div>
 
-          <iframe id="agent-frame" title="AI agent chat (legacy embed)" src="about:blank"
-                  allow="microphone; camera; clipboard-write; autoplay"
-                  referrerpolicy="strict-origin-when-cross-origin"></iframe>
+          <!-- The canvas belongs to Copilot Studio's origin, so its own blue
+               header cannot be restyled or removed from the inside. It is
+               instead slid up out of view behind this app's top bar by the
+               clip wrapper: the frame is taller than its container by exactly
+               the header's height and offset upward by the same amount. -->
+          <div class="embed-clip" id="embed-clip">
+            <iframe id="agent-frame" title="AI agent chat (legacy embed)" src="about:blank"
+                    allow="microphone; camera; clipboard-write; autoplay"
+                    referrerpolicy="strict-origin-when-cross-origin"></iframe>
+          </div>
         </div>
       </section>
     </div>
@@ -477,16 +490,30 @@
   <div class="modal-body">
     <div class="notice">
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7" fill="none"/><path d="M12 11v5M12 8h.01" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
-      <span>Paste any Copilot Studio, Azure Bot or web chat embed URL. In Copilot Studio this is under <strong>Channels &rarr; Custom website</strong>.</span>
+      <span>Paste any Copilot Studio, Azure Bot or web chat address. In Copilot Studio, open the
+      agent&rsquo;s <strong>Channels</strong> page &rarr; <strong>Custom website</strong>, or paste the
+      whole embed code &mdash; the address is pulled out of it for you.</span>
     </div>
     <div class="field">
       <label for="agent-form-name">Display name</label>
       <input type="text" id="agent-form-name" placeholder="e.g. HR Assistant">
     </div>
     <div class="field">
-      <label for="agent-form-url">Embed URL</label>
+      <label for="agent-form-url">Agent URL or embed code</label>
       <input type="url" id="agent-form-url" placeholder="https://copilotstudio.microsoft.com/.../webchat?__version__=2">
-      <div class="hint">Must be an https:// address that permits embedding.</div>
+      <div class="hint">Must be an https:// address. A demo-website address is converted to the
+        embeddable one automatically, so the agent appears rather than Copilot Studio&rsquo;s
+        test-site splash page.</div>
+    </div>
+    <div class="field">
+      <label for="agent-form-mode">How this agent connects</label>
+      <select id="agent-form-mode">
+        <option value="">Use the workspace default</option>
+        <option value="m365">Full client &mdash; Microsoft 365 Agents SDK</option>
+        <option value="iframe">Legacy embed &mdash; Copilot Studio's own canvas</option>
+      </select>
+      <div class="hint">Set per agent, so one agent can use the full client while another stays on
+        the legacy embed. Changeable later in Connection settings.</div>
     </div>
     <div class="field">
       <label for="agent-form-desc">Description (optional)</label>
@@ -537,9 +564,23 @@
     <div class="set-row">
       <span class="info">
         <strong>Connection &amp; sign-in</strong>
-        <span>Choose how BIG A reaches the agent. Needed if your agent requires authentication.</span>
+        <span>Choose how BIG A reaches each agent. Needed if your agent requires authentication.</span>
       </span>
       <button class="btn btn-ghost btn-sm" id="connect-btn">Configure</button>
+    </div>
+    <div class="set-row">
+      <span class="info">
+        <strong>Hide the agent&rsquo;s own header</strong>
+        <span>In legacy embed mode, slide Copilot Studio&rsquo;s blue title bar up behind this app&rsquo;s
+          top bar. Increase the amount if a sliver of it still shows.</span>
+      </span>
+      <select id="embed-crop" class="set-select" aria-label="Amount of the embedded header to hide">
+        <option value="0">Show it</option>
+        <option value="48">Hide &mdash; small</option>
+        <option value="60">Hide &mdash; standard</option>
+        <option value="76">Hide &mdash; large</option>
+        <option value="96">Hide &mdash; extra large</option>
+      </select>
     </div>
     <div class="set-row">
       <span class="info">
@@ -574,53 +615,189 @@
   </div>
   <div class="modal-body">
 
-    <div class="notice">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7" fill="none"/><path d="M12 11v5M12 8h.01" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
-      <span>Copilot Studio has retired the Direct Line <strong>token endpoint</strong> for new agents and
-      replaced it with a <strong>Microsoft 365 Agents SDK</strong> connection string. BIG A now speaks that
-      protocol directly, which is what keeps messages copyable, styled, stored and droppable. The older
-      Direct Line, single sign-on and embed modes are still here as fallbacks.</span>
+    <!-- Which agent these settings belong to. Each agent can use a different
+         transport, so one can run the full client while another stays on the
+         legacy embed. -->
+    <div class="field conn-scope-row">
+      <label for="conn-target">These settings apply to</label>
+      <select id="conn-target">
+        <option value="agent">This agent only</option>
+        <option value="global">Every agent (workspace default)</option>
+      </select>
+      <p class="hint" id="conn-target-hint"></p>
     </div>
 
     <div class="field">
-      <label for="conn-mode">Connection mode</label>
+      <label for="conn-mode">How this page reaches the agent</label>
       <select id="conn-mode">
-        <option value="m365">Microsoft 365 Agents SDK &mdash; current, recommended</option>
-        <option value="directline">Direct Line token endpoint &mdash; legacy</option>
-        <option value="sso">Direct Line + single sign-on &mdash; legacy</option>
-        <option value="iframe">Legacy embed &mdash; fallback only, loses persistence and styling</option>
+        <option value="m365">Full client &mdash; Microsoft 365 Agents SDK (recommended)</option>
+        <option value="iframe">Legacy embed &mdash; Copilot Studio's own canvas in a frame</option>
+        <option value="directline">Direct Line token endpoint (legacy)</option>
+        <option value="sso">Direct Line + single sign-on (legacy)</option>
       </select>
       <p class="hint" id="conn-mode-hint"></p>
     </div>
 
     <div id="conn-fields" hidden>
 
-      <!-- Current transport: Direct-to-Engine via the Agents SDK protocol -->
-      <div id="conn-m365-fields" hidden>
+      <!-- ============ Step 1: identify the agent (required) ============ -->
+      <section class="conn-step" id="conn-m365-fields" hidden>
+        <header class="conn-step-head">
+          <span class="conn-step-no">1</span>
+          <span class="conn-step-title">
+            <strong>Point this page at your agent</strong>
+            <small>Required. Paste once and the boxes below fill themselves in.</small>
+          </span>
+        </header>
+
         <div class="field">
-          <label for="conn-string">Agent connection string <span class="req">easiest</span></label>
+          <label for="conn-string">Paste from Copilot Studio</label>
           <textarea id="conn-string" rows="3" spellcheck="false"
                     placeholder="EnvironmentId=...;SchemaName=...;TenantId=...;CopilotAgentType=Published"></textarea>
-          <p class="hint">Copilot Studio &rsaquo; your agent &rsaquo; <strong>Channels</strong> &rsaquo;
-            <strong>Web app</strong> or <strong>Native app</strong> &rsaquo;
-            <strong>Microsoft 365 Agents SDK</strong>. Pasting it fills in the boxes below.
-            <button class="btn btn-quiet btn-sm" id="conn-apply-string" type="button"
-                    style="margin-left:6px">Read connection string</button></p>
+          <div class="conn-inline-acts">
+            <button class="btn btn-ghost btn-sm" id="conn-apply-string" type="button">Read what I pasted</button>
+            <span class="hint" id="conn-string-read"></span>
+          </div>
+          <p class="hint">
+            Anything with the identifiers in it works here: the
+            <strong>Microsoft 365 Agents SDK connection string</strong>, the website
+            <strong>embed code</strong>, the agent&rsquo;s web chat address, or the
+            <strong>Session details</strong> panel from Copilot Studio&rsquo;s settings.
+          </p>
         </div>
 
         <div class="field-row">
           <div class="field">
-            <label for="conn-env-id">Environment ID</label>
+            <label for="conn-env-id">Environment ID <span class="req">required</span></label>
             <input type="text" id="conn-env-id" spellcheck="false"
                    placeholder="00000000-0000-0000-0000-000000000000">
           </div>
           <div class="field">
-            <label for="conn-schema">Agent schema name</label>
+            <label for="conn-schema">Agent schema name <span class="req">required</span></label>
             <input type="text" id="conn-schema" spellcheck="false" placeholder="cr123_myAgent">
           </div>
         </div>
-        <p class="hint">Both are in Copilot Studio &rsaquo; <strong>Settings</strong> &rsaquo;
-          <strong>Advanced</strong> &rsaquo; <strong>Metadata</strong>.</p>
+        <p class="hint">
+          To read them off by hand instead: open the agent, then
+          <strong>Settings</strong> &rsaquo; <strong>Advanced</strong> &rsaquo; <strong>Metadata</strong>,
+          which lists the Environment ID, Tenant ID and Schema name.
+          A <code>Default-</code> prefix on the environment ID is removed for you.
+        </p>
+        <p class="hint conn-target-line" id="conn-resolved"></p>
+      </section>
+
+      <!-- ============ Step 2: sign in (required) ============ -->
+      <section class="conn-step" id="conn-signin-fields" hidden>
+        <header class="conn-step-head">
+          <span class="conn-step-no" id="conn-signin-no">2</span>
+          <span class="conn-step-title">
+            <strong>Sign in with Microsoft</strong>
+            <small id="conn-signin-sub">Required. This protocol has no anonymous mode &mdash; every
+              message carries the signed-in user&rsquo;s token.</small>
+          </span>
+        </header>
+
+        <div class="field-row">
+          <div class="field">
+            <label for="conn-client-id">Application (client) ID <span class="req">required</span></label>
+            <input type="text" id="conn-client-id" spellcheck="false"
+                   placeholder="00000000-0000-0000-0000-000000000000">
+          </div>
+          <div class="field">
+            <label for="conn-tenant-id">Directory (tenant) ID</label>
+            <input type="text" id="conn-tenant-id" spellcheck="false" placeholder="common">
+          </div>
+        </div>
+        <p class="hint" id="conn-client-hint"></p>
+
+        <div class="conn-actions">
+          <button class="btn btn-ghost btn-sm" id="conn-signin" type="button">Sign in with Microsoft</button>
+          <button class="btn btn-quiet btn-sm" id="conn-signin-redirect" type="button">Sign in via redirect</button>
+          <button class="btn btn-quiet btn-sm" id="conn-test" type="button">Test connection</button>
+        </div>
+
+        <div class="conn-account" id="conn-account" hidden>
+          <span class="info">
+            <strong id="conn-account-name">Not signed in</strong>
+            <span id="conn-account-mail"></span>
+          </span>
+          <button class="btn btn-ghost btn-sm" id="conn-signout">Sign out</button>
+        </div>
+
+        <details class="setup-help">
+          <summary>I don&rsquo;t have an application (client) ID yet</summary>
+          <ol>
+            <li>Open the <strong>Azure portal</strong> &rsaquo; <strong>Microsoft Entra ID</strong> &rsaquo;
+              <strong>App registrations</strong> &rsaquo; <strong>New registration</strong>. Give it any
+              name and register it.</li>
+            <li>In that registration, open <strong>Authentication</strong> &rsaquo;
+              <strong>Add a platform</strong> &rsaquo; <strong>Single-page application</strong>, and enter
+              this exact redirect URI:
+              <code id="conn-redirect">&mdash;</code></li>
+            <li>Open <strong>API permissions</strong> &rsaquo; <strong>Add a permission</strong> &rsaquo;
+              <strong>APIs my organization uses</strong>, search for
+              <strong>Power Platform API</strong>, choose <strong>Delegated permissions</strong> &rsaquo;
+              <strong>Copilot Studio</strong> &rsaquo;
+              <strong>CopilotStudio.Copilots.Invoke</strong>, then add it and
+              <strong>grant admin consent</strong>.</li>
+            <li>Copy the <strong>Application (client) ID</strong> and
+              <strong>Directory (tenant) ID</strong> from the registration&rsquo;s Overview page into the
+              boxes above.</li>
+            <li><strong>Publish the agent</strong> in Copilot Studio. This protocol talks to the
+              published agent, so unpublished edits will not show up.</li>
+          </ol>
+          <p class="hint">If <em>Power Platform API</em> does not appear in the list, an administrator
+            needs to register the <code>Microsoft.PowerPlatform</code> resource provider in the tenant
+            first. Everyone who uses this page also needs access to the agent in Copilot Studio.</p>
+        </details>
+      </section>
+
+      <!-- ============ Legacy: Direct Line token endpoint ============ -->
+      <section class="conn-step" id="conn-legacy-fields" hidden>
+        <header class="conn-step-head">
+          <span class="conn-step-no">1</span>
+          <span class="conn-step-title">
+            <strong>Direct Line token endpoint</strong>
+            <small>Required for this legacy mode.</small>
+          </span>
+        </header>
+        <div class="field">
+          <label for="conn-token-endpoint">Token endpoint</label>
+          <input type="url" id="conn-token-endpoint" spellcheck="false"
+                 placeholder="https://....environment.api.powerplatform.com/powervirtualagents/.../directline/token?api-version=...">
+          <div class="conn-inline-acts">
+            <button class="btn btn-ghost btn-sm" id="conn-detect" type="button">Detect automatically</button>
+          </div>
+          <p class="hint">Copilot Studio &rsaquo; your agent &rsaquo; <strong>Channels</strong> &rsaquo;
+            <strong>Mobile app</strong>. Agents created recently no longer show one &mdash; if yours does
+            not, use the full client instead.</p>
+        </div>
+      </section>
+
+      <!-- ============ Legacy embed notes ============ -->
+      <section class="conn-step" id="conn-iframe-fields" hidden>
+        <header class="conn-step-head">
+          <span class="conn-step-no">1</span>
+          <span class="conn-step-title">
+            <strong>Nothing to configure</strong>
+            <small>This mode uses the agent&rsquo;s embed URL, set on the agent itself.</small>
+          </span>
+        </header>
+        <p class="hint" id="conn-embed-url">&mdash;</p>
+        <div class="conn-actions">
+          <button class="btn btn-ghost btn-sm" id="conn-embed-edit" type="button">Edit this agent&rsquo;s URL</button>
+        </div>
+        <p class="hint">
+          Copilot Studio&rsquo;s embed code is only shown when the agent&rsquo;s security setting is
+          <strong>No authentication</strong> (Settings &rsaquo; Security &rsaquo; Authentication).
+          With sign-in turned on, the frame cannot complete its sign-in popup across origins, and the
+          full client is the only mode that works.
+        </p>
+      </section>
+
+      <!-- ============ Everything optional ============ -->
+      <details class="setup-help conn-advanced" id="conn-advanced">
+        <summary>Optional settings &mdash; you almost certainly do not need these</summary>
 
         <div class="field-row">
           <div class="field">
@@ -633,6 +810,8 @@
               <option value="mooncake">China (21Vianet)</option>
               <option value="preprod">Pre-production</option>
             </select>
+            <p class="hint">Commercial covers every normal tenant, including Australian and European
+              ones. Only change this for a sovereign or government cloud.</p>
           </div>
           <div class="field">
             <label for="conn-agent-type">Agent type</label>
@@ -640,85 +819,26 @@
               <option value="published">Published (Dataverse-backed)</option>
               <option value="prebuilt">Prebuilt</option>
             </select>
+            <p class="hint">Leave as Published unless you are connecting to one of Microsoft&rsquo;s
+              prebuilt agents.</p>
           </div>
         </div>
 
         <div class="field">
-          <label for="conn-direct-url">Direct connect URL <span class="req">optional</span></label>
+          <label for="conn-direct-url">Direct connect URL</label>
           <input type="url" id="conn-direct-url" spellcheck="false"
                  placeholder="https://....environment.api.powerplatform.com/copilotstudio/dataverse-backed/authenticated/bots/...">
-          <p class="hint">Only needed if your connection string supplies a full endpoint. It overrides the
+          <p class="hint">Only if your connection string supplied a full endpoint. It overrides the
             environment ID and schema name above.</p>
         </div>
 
-        <p class="hint" id="conn-resolved"></p>
-      </div>
-
-      <!-- Legacy transport: Direct Line token endpoint -->
-      <div id="conn-legacy-fields" hidden>
         <div class="field">
-          <label for="conn-token-endpoint">Token endpoint <span class="req">legacy</span></label>
-          <input type="url" id="conn-token-endpoint" spellcheck="false"
-                 placeholder="https://....environment.api.powerplatform.com/powervirtualagents/.../directline/token?api-version=...">
-          <p class="hint">Copilot Studio &rsaquo; your agent &rsaquo; <strong>Channels</strong> &rsaquo;
-            <strong>Mobile app</strong>. New agents no longer show this &mdash; if yours does not, use the
-            Agents SDK mode instead.
-            <button class="btn btn-quiet btn-sm" id="conn-detect" type="button"
-                    style="margin-left:6px">Detect automatically</button></p>
-        </div>
-      </div>
-
-      <!-- Entra ID sign-in: required by the Agents SDK, and by legacy SSO -->
-      <div id="conn-sso-fields" hidden>
-        <div class="field">
-          <label for="conn-client-id">Application (client) ID <span class="req">required</span></label>
-          <input type="text" id="conn-client-id" spellcheck="false"
-                 placeholder="00000000-0000-0000-0000-000000000000">
-          <p class="hint" id="conn-client-hint"></p>
-        </div>
-        <div class="field">
-          <label for="conn-tenant-id">Directory (tenant) ID</label>
-          <input type="text" id="conn-tenant-id" spellcheck="false" placeholder="common">
-          <p class="hint">Leave as <code>common</code> to allow any Microsoft account. The Agents SDK
-            works best with your own tenant ID.</p>
-        </div>
-        <div class="field">
-          <label for="conn-scope">Scope <span class="req">required</span></label>
+          <label for="conn-scope">Sign-in scope</label>
           <input type="text" id="conn-scope" spellcheck="false"
                  placeholder="https://api.powerplatform.com/CopilotStudio.Copilots.Invoke">
-          <p class="hint">For the Agents SDK, leave the default
-            <code>https://api.powerplatform.com/CopilotStudio.Copilots.Invoke</code>. For legacy single
-            sign-on, use the scope exposed by your <strong>authentication</strong> app registration.</p>
+          <p class="hint">Leave the default for the full client. For legacy single sign-on, use the scope
+            exposed by your <strong>authentication</strong> app registration instead.</p>
         </div>
-
-        <div class="conn-actions">
-          <button class="btn btn-ghost btn-sm" id="conn-signin" type="button">Sign in with Microsoft</button>
-          <button class="btn btn-quiet btn-sm" id="conn-signin-redirect" type="button">Sign in via redirect</button>
-          <button class="btn btn-quiet btn-sm" id="conn-test" type="button">Test connection</button>
-        </div>
-
-        <details class="setup-help">
-          <summary>How to set up the Microsoft 365 Agents SDK connection</summary>
-          <ol>
-            <li>In Copilot Studio, open your agent &rsaquo; <strong>Channels</strong> &rsaquo;
-              <strong>Web app</strong> (or <strong>Native app</strong>) and copy the
-              <strong>Microsoft 365 Agents SDK</strong> connection details.</li>
-            <li>In the Azure portal, register an application. Under <strong>Authentication</strong>, add a
-              <strong>Single-page application</strong> platform with this exact redirect URI:
-              <code id="conn-redirect">&mdash;</code></li>
-            <li>Under <strong>API permissions</strong>, add
-              <strong>Power Platform API</strong> &rsaquo; <strong>Delegated</strong> &rsaquo;
-              <strong>CopilotStudio.Copilots.Invoke</strong>, then grant
-              <strong>admin consent</strong>. If Power Platform API is not listed, register the
-              <code>Microsoft.PowerPlatform</code> resource provider in your tenant first.</li>
-            <li>Paste the client ID and tenant ID above, sign in, then use
-              <strong>Test connection</strong>.</li>
-            <li><strong>Publish your agent.</strong> The Agents SDK talks to the published agent, so
-              unpublished changes will not appear.</li>
-          </ol>
-          <p class="hint">Users of this page need access to the agent in Copilot Studio. There is no
-            anonymous mode: every request carries a signed-in user's token.</p>
-        </details>
 
         <details class="setup-help">
           <summary>How to set up legacy single sign-on</summary>
@@ -735,7 +855,7 @@
               <strong>Authentication</strong>, add a <strong>Single-page application</strong> platform
               with this exact redirect URI: <code id="conn-redirect-legacy">&mdash;</code></li>
             <li>In the <em>authentication</em> app, go to <strong>Expose an API</strong>, add a scope,
-              and copy its full value into the <strong>Custom scope</strong> box above.</li>
+              and copy its full value into the <strong>Sign-in scope</strong> box above.</li>
             <li>Still in <strong>Expose an API</strong>, under
               <strong>Authorized client applications</strong>, add the <em>canvas</em> app's client ID.</li>
             <li>Back in Copilot Studio's Authentication panel, paste that same scope into
@@ -744,20 +864,12 @@
               <strong>publish your agent</strong> &mdash; auth changes only take effect after publishing.</li>
           </ol>
         </details>
-      </div>
-    </div>
-
-    <div class="conn-account" id="conn-account" hidden>
-      <span class="info">
-        <strong id="conn-account-name">Not signed in</strong>
-        <span id="conn-account-mail"></span>
-      </span>
-      <button class="btn btn-ghost btn-sm" id="conn-signout">Sign out</button>
+      </details>
     </div>
 
     <p class="hint" style="margin-top:14px">
-      These details are stored only in this browser. Secure modes load Microsoft's WebChat and
-      sign-in libraries from Microsoft's own CDNs.
+      These details are stored only in this browser. Authenticated modes load Microsoft's sign-in
+      library from Microsoft's own CDN.
     </p>
   </div>
   <div class="modal-foot">

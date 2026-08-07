@@ -96,6 +96,10 @@
     // buries the conversation and surprises people; it is one click or
     // Ctrl/Cmd + J away whenever it is wanted.
     settings: { fileAttach: true, autoOpenWorkbench: false },
+    // How much of the embedded canvas's own header is hidden behind our top
+    // bar, in CSS pixels. 0 shows it. Stored separately from the boolean
+    // switches above because it is a number, not a toggle.
+    embedCrop: 60,
     connection: {
       // Current transport: Copilot Studio via the Microsoft 365 Agents SDK.
       mode: "m365",
@@ -126,6 +130,7 @@
       Store.kv.set("activeAgent", state.activeAgent),
       Store.kv.set("activeChat", state.activeChat),
       Store.kv.set("settings", state.settings),
+      Store.kv.set("embedCrop", state.embedCrop),
       Store.kv.set("connection", state.connection),
       Store.kv.set("artifact", state.artifact)
     ]).catch(function () { /* storage full or blocked: keep running */ });
@@ -140,15 +145,17 @@
         });
       }
       if (kv.artifact && typeof kv.artifact === "object") state.artifact = kv.artifact;
+      if (typeof kv.embedCrop === "number" && kv.embedCrop >= 0 && kv.embedCrop <= 200) {
+        state.embedCrop = kv.embedCrop;
+      }
 
       state.agents = Array.isArray(kv.agents) ? kv.agents.filter(Boolean) : [];
 
-      // Earlier builds seeded a demo agent pointing at someone else's tenant.
-      // Drop it on upgrade unless the user actually edited it, so nobody is
-      // left staring at a connection error for an agent they never chose.
-      state.agents = state.agents.filter(function (a) {
-        return !(a.builtin && /bgstest_claude_rxWJjM/.test(a.url || ""));
-      });
+      // Earlier builds shipped a seeded agent pointing at whichever tenant the
+      // site was built for. Nothing creates a built-in agent any more, so drop
+      // any that survive from an older install rather than leaving people
+      // staring at a connection error for an agent they never chose.
+      state.agents = state.agents.filter(function (a) { return !a.builtin; });
 
       state.activeAgent = kv.activeAgent && state.agents.some(function (a) { return a.id === kv.activeAgent; })
         ? kv.activeAgent
@@ -207,6 +214,45 @@
 
   /** True while the workspace has no agent to talk to. */
   function hasAgent() { return state.agents.length > 0; }
+
+  /* ------------------------------------------------- per-agent connection */
+
+  /* Connection settings are workspace-wide by default, but any agent may
+     override any of them — including the transport itself. That is what lets
+     one agent run the full Agents SDK client while another sits on the legacy
+     embed, which is common while an older agent is being migrated. */
+
+  var CONN_KEYS = [
+    "connectionString", "directConnectUrl", "environmentId", "schemaName",
+    "cloud", "agentType", "clientId", "tenantId", "scope", "tokenEndpoint"
+  ];
+
+  /** The settings actually in force for one agent: its overrides over ours. */
+  function effectiveConn(agent) {
+    var out = {};
+    Object.keys(state.connection).forEach(function (k) { out[k] = state.connection[k]; });
+
+    // Earlier builds stored per-agent Agents SDK details under `m365`.
+    if (agent && agent.m365 && typeof agent.m365 === "object") {
+      Object.keys(agent.m365).forEach(function (k) { if (agent.m365[k]) out[k] = agent.m365[k]; });
+    }
+    if (agent && agent.conn && typeof agent.conn === "object") {
+      if (agent.conn.mode) out.mode = agent.conn.mode;
+      CONN_KEYS.forEach(function (k) { if (agent.conn[k]) out[k] = agent.conn[k]; });
+    }
+    if (agent && agent.tokenEndpoint && !out.tokenEndpoint) out.tokenEndpoint = agent.tokenEndpoint;
+    return out;
+  }
+
+  function activeConn() { return effectiveConn(currentAgent()); }
+  function activeMode() { return activeConn().mode || "m365"; }
+
+  /** True when this agent carries its own settings rather than inheriting. */
+  function agentHasOverride(agent) {
+    if (!agent || !agent.conn || typeof agent.conn !== "object") return false;
+    if (agent.conn.mode) return true;
+    return CONN_KEYS.some(function (k) { return !!agent.conn[k]; });
+  }
 
   /* ---------------------------------------------------------------- toasts */
 
@@ -301,8 +347,38 @@
     el.textContent = map[0];
     el.className = "conn-pill " + map[1];
     // The tooltip carries the detail: which transport, and what went wrong.
-    el.title = [MODE_LABEL[state.connection.mode] || "", detail || map[0]]
+    el.title = [MODE_LABEL[activeMode()] || "", detail || map[0]]
       .filter(Boolean).join(" · ");
+  }
+
+  /**
+   * The legacy embed used to own a second bar of its own, directly under the
+   * top bar, which meant two rows of chrome saying overlapping things. Its
+   * badge and its buttons now live in the one top bar and appear only while
+   * that mode is in use.
+   */
+  function syncTopbarMode() {
+    var legacy = hasAgent() && activeMode() === "iframe";
+    var badge = $("#legacy-badge");
+    var acts = $("#legacy-acts");
+    var note = $("#topbar-note");
+    if (badge) {
+      badge.hidden = !legacy;
+      var agent = currentAgent();
+      badge.title = "Copilot Studio's own canvas, running in a frame" +
+        (agent ? " for " + agent.name : "") +
+        ". Messages in this mode are not saved to this browser.";
+    }
+    if (acts) acts.hidden = !legacy;
+    // Two advisory notes side by side is one too many; the badge wins.
+    if (note) note.hidden = legacy;
+    document.body.classList.toggle("legacy-embed", legacy);
+  }
+
+  /** Push the chosen header crop into CSS, where the clip window reads it. */
+  function applyEmbedCrop() {
+    var px = Math.max(0, Math.min(200, Number(state.embedCrop) || 0));
+    document.documentElement.style.setProperty("--embed-crop", px + "px");
   }
 
   /* ----------------------------------------------------- agent connection */
@@ -323,6 +399,7 @@
     $("#wb-agent").textContent = "No agent";
     document.title = "BIG A";
     setStatus("idle", "Add an agent to get started");
+    syncTopbarMode();
     return Promise.resolve();
   }
 
@@ -341,8 +418,30 @@
   /**
    * Legacy path: the agent's own canvas in a sandboxed frame. Kept as an
    * escape hatch. We cannot style or read across the origin boundary, but we
-   * can own the chrome around it and notice when it fails to load.
+   * can own the chrome around it, crop its header away, and notice when it
+   * fails to load.
+   *
+   * Turn whatever URL the agent was added with into the *embeddable* canvas.
+   *
+   * This is the fix for the frame showing Copilot Studio's demo site — the
+   * "I'm your new agent" splash with prompt cards and a floating chat box —
+   * instead of the agent. Those two canvases live at almost the same address:
+   * the demo site is ".../bots/{schema}/canvas" (or a webchat URL without
+   * cliAgent), while the embeddable one is
+   * ".../bots/{schema}/webchat?__version__=2&cliAgent=true". Anything that is
+   * not a Copilot Studio address is passed through untouched.
    */
+  function embedUrlFor(agent) {
+    var raw = (agent && agent.url) || "";
+    if (!raw) return "";
+    if (!global.M365Agents || !global.M365Agents.webChatUrl) return raw;
+    try {
+      return global.M365Agents.webChatUrl(raw, { fileAttachment: !!state.settings.fileAttach });
+    } catch (e) {
+      return raw;
+    }
+  }
+
   function loadEmbed() {
     var agent = currentAgent();
     if (!agent) return showWelcome();
@@ -350,17 +449,17 @@
     var frame = $("#agent-frame");
     Chat.disconnect();
     showPane("embed");
+    syncTopbarMode();
+    applyEmbedCrop();
 
     $("#embed-loading").hidden = false;
     $("#embed-blocked").hidden = true;
-    $("#embed-note").textContent =
-      "Messages here are not saved to this browser · " + agent.name;
 
-    try {
-      var u = new URL(agent.url);
-      u.searchParams.set("enableFileAttachment", "true");
-      embedUrl = u.toString();
-    } catch (e) { embedUrl = agent.url || ""; }
+    embedUrl = embedUrlFor(agent);
+
+    if (embedUrl && embedUrl !== agent.url) {
+      logEvent("Embed URL normalised", embedUrl, "info");
+    }
 
     if (!embedUrl) {
       $("#embed-loading").hidden = true;
@@ -406,22 +505,24 @@
     if (!hasAgent()) return showWelcome();
 
     var agent = currentAgent();
+    var conn = effectiveConn(agent);
 
     Chat.setAgent(agent);
     $("#agent-name").textContent = agent.name;
     $("#wb-agent").textContent = agent.name;
     $("#chat-empty-title").textContent = "How can I help today?";
     document.title = agent.name + " · BIG A";
+    syncTopbarMode();
 
-    if (state.connection.mode === "iframe") return loadEmbed();
+    if (conn.mode === "iframe") return loadEmbed();
 
     stopEmbed();
     showPane("chat");
 
-    if (state.connection.mode === "m365") return connectViaAgentsSdk(agent);
+    if (conn.mode === "m365") return connectViaAgentsSdk(agent);
 
-    var bearerStep = state.connection.mode === "sso" && global.Connect
-      ? global.Connect.acquireToken(state.connection).then(function (res) {
+    var bearerStep = conn.mode === "sso" && global.Connect
+      ? global.Connect.acquireToken(conn).then(function (res) {
           renderAccount();
           return res.accessToken;
         })
@@ -431,7 +532,7 @@
       return Chat.open(state.activeChat, {
         transport: "directline",
         bearer: bearer,
-        tokenEndpoint: state.connection.tokenEndpoint || agent.tokenEndpoint || ""
+        tokenEndpoint: conn.tokenEndpoint || ""
       });
     }).catch(function (err) {
       setStatus("offline", err && err.message);
@@ -444,8 +545,8 @@
    * the global connection settings apply.
    */
   function agentSettings(agent) {
-    var c = state.connection;
-    var s = {
+    var c = effectiveConn(agent);
+    return {
       connectionString: c.connectionString,
       directConnectUrl: c.directConnectUrl,
       environmentId: c.environmentId,
@@ -456,12 +557,6 @@
       clientId: c.clientId,
       scope: c.scope
     };
-    if (agent && agent.m365 && typeof agent.m365 === "object") {
-      Object.keys(agent.m365).forEach(function (k) {
-        if (agent.m365[k]) s[k] = agent.m365[k];
-      });
-    }
-    return s;
   }
 
   function connectViaAgentsSdk(agent) {
@@ -1337,36 +1432,89 @@
   /* --------------------------------------------------- connection & sign-in */
 
   var MODE_HINTS = {
-    m365: "Recommended. This page talks to the agent directly using the Microsoft 365 Agents SDK " +
-          "protocol, the replacement for the retired token endpoint. Copy the connection string from " +
-          "Copilot Studio → Channels, and sign in with Microsoft. Streaming replies, progress detail, " +
-          "file attachments, drag and drop and local history all work.",
+    m365: "Recommended. Talks to the agent directly over the Microsoft 365 Agents SDK protocol, the " +
+          "replacement for the retired token endpoint. Two things are required: the connection string " +
+          "from Copilot Studio, and an Entra ID application (client) ID to sign in with. Everything " +
+          "else below is optional. Streaming replies, file attachments and local history all work.",
+    iframe: "Simplest. Loads Copilot Studio's own chat canvas inside this page. Nothing to register, " +
+            "but the canvas keeps its own appearance, its messages cannot be copied or stored here, " +
+            "and files cannot be dropped into it.",
     directline: "Legacy. Uses a Direct Line token endpoint, which Copilot Studio no longer issues for " +
                 "new agents. Keep this only for an existing agent that still has one.",
     sso: "Legacy, plus single sign-on: you sign in with Microsoft up front and BIG A answers the " +
-         "agent's sign-in card for you. Requires an Entra ID app registration and a working token endpoint.",
-    iframe: "Fallback. Loads the agent's own embedded canvas. It cannot be restyled, its messages " +
-            "cannot be copied or stored, and files cannot be dropped into it. Use only if a direct " +
-            "connection cannot be made."
+         "agent's sign-in card for you. Requires an Entra ID app registration and a working token endpoint."
   };
+
+  /** The agent the connection modal is currently editing, or null for global. */
+  var connEditing = null;
 
   function syncConnFields() {
     var mode = $("#conn-mode").value;
     $("#conn-mode-hint").textContent = MODE_HINTS[mode] || "";
-    $("#conn-fields").hidden = mode === "iframe";
-    $("#conn-m365-fields").hidden = mode !== "m365";
-    $("#conn-legacy-fields").hidden = !(mode === "directline" || mode === "sso");
-    // Entra ID details are needed by the Agents SDK and by single sign-on.
-    $("#conn-sso-fields").hidden = !(mode === "m365" || mode === "sso");
+
+    var needsSdk = mode === "m365";
+    var needsLegacy = mode === "directline" || mode === "sso";
+    var needsSignIn = mode === "m365" || mode === "sso";
+
+    // The wrapper is only empty for modes with no fields at all, which no
+    // longer happens: the embed mode has its own panel now.
+    $("#conn-fields").hidden = false;
+    $("#conn-m365-fields").hidden = !needsSdk;
+    $("#conn-legacy-fields").hidden = !needsLegacy;
+    $("#conn-signin-fields").hidden = !needsSignIn;
+    $("#conn-iframe-fields").hidden = mode !== "iframe";
+    // Advanced settings only mean anything to the two direct transports.
+    var adv = $("#conn-advanced");
+    if (adv) adv.hidden = mode === "iframe";
+
+    // Number the visible steps, so "Step 2" is always the second thing seen.
+    var signInNo = $("#conn-signin-no");
+    if (signInNo) signInNo.textContent = needsSdk ? "2" : "1";
+    var signInSub = $("#conn-signin-sub");
+    if (signInSub) {
+      signInSub.textContent = needsSdk
+        ? "Required. This protocol has no anonymous mode, so every request is sent as a signed-in user."
+        : "Required for single sign-on: BIG A signs you in and answers the agent's sign-in card for you.";
+    }
+
     var clientHint = $("#conn-client-hint");
     if (clientHint) {
-      clientHint.textContent = mode === "m365"
+      clientHint.textContent = needsSdk
         ? "Required. A single-page-application registration with the delegated Power Platform API " +
           "permission CopilotStudio.Copilots.Invoke, granted admin consent."
         : "Required for single sign-on only.";
     }
+
     var resolved = $("#conn-resolved");
     if (resolved) resolved.textContent = describeTarget();
+
+    syncConnTargetHint();
+    syncConnEmbedPreview();
+  }
+
+  /** Say plainly which agents the settings about to be saved will apply to. */
+  function syncConnTargetHint() {
+    var sel = $("#conn-target");
+    var hint = $("#conn-target-hint");
+    if (!sel || !hint) return;
+    if (sel.value === "agent") {
+      var name = connEditing ? connEditing.name : "this agent";
+      hint.textContent = "Saved against " + name + " only. Other agents keep their own settings, so " +
+        "you can run one agent on the Agents SDK and another on the embedded canvas.";
+    } else {
+      hint.textContent = "Saved as the workspace default, used by every agent that has no settings " +
+        "of its own.";
+    }
+  }
+
+  /** Show the exact frame URL the embed mode will load for this agent. */
+  function syncConnEmbedPreview() {
+    var out = $("#conn-embed-url");
+    if (!out) return;
+    var agent = connEditing || currentAgent();
+    if (!agent) { out.textContent = "Add an agent first."; return; }
+    var url = embedUrlFor(agent);
+    out.textContent = url || "This agent has no URL yet.";
   }
 
   /** Show the endpoint the current settings resolve to: fast way to spot a typo. */
@@ -1400,22 +1548,51 @@
    * everything it contains rather than making anyone pick it apart by hand.
    */
   function applyConnectionString() {
+    var out = $("#conn-string-read");
     var raw = $("#conn-string").value.trim();
-    if (!raw || !global.M365Agents) return;
+    function say(msg, kind) {
+      if (!out) return;
+      out.textContent = msg;
+      out.className = "hint" + (kind ? " " + kind : "");
+    }
+
+    if (!raw || !global.M365Agents) {
+      say("Paste something first.", "err");
+      return;
+    }
     var p;
     try {
       p = global.M365Agents.parseConnection(raw);
     } catch (e) {
+      say(e.message, "err");
       toast(e.message, "err");
       return;
     }
-    if (p.environmentId) $("#conn-env-id").value = p.environmentId;
-    if (p.schemaName) $("#conn-schema").value = p.schemaName;
-    if (p.directConnectUrl) $("#conn-direct-url").value = p.directConnectUrl;
-    if (p.tenantId) $("#conn-tenant-id").value = p.tenantId;
-    if (p.clientId) $("#conn-client-id").value = p.clientId;
-    if (p.cloud) $("#conn-cloud").value = p.cloud;
-    if (p.agentType) $("#conn-agent-type").value = p.agentType;
+
+    // Report field by field, because a half-recognised paste is the single
+    // most common reason this page fails to connect.
+    var read = [];
+    function take(key, id, label) {
+      if (!p[key]) return;
+      var node = $(id);
+      if (node) node.value = p[key];
+      read.push(label);
+    }
+    take("environmentId", "#conn-env-id", "environment ID");
+    take("schemaName", "#conn-schema", "agent schema name");
+    take("directConnectUrl", "#conn-direct-url", "direct URL");
+    take("tenantId", "#conn-tenant-id", "tenant ID");
+    take("clientId", "#conn-client-id", "client ID");
+    take("cloud", "#conn-cloud", "cloud");
+    take("agentType", "#conn-agent-type", "agent type");
+
+    if (read.length) {
+      say("Read " + read.join(", ") + ".", "ok");
+      toast("Read " + read.length + " value" + (read.length === 1 ? "" : "s") + ".", "ok");
+    } else {
+      say("Nothing recognisable in there. Paste the connection string, the agent's URL, or the " +
+          "Environment ID and Schema name from Settings, Advanced, Metadata.", "err");
+    }
     syncConnFields();
   }
 
@@ -1428,8 +1605,29 @@
     $("#conn-account-mail").textContent = acct.username || "";
   }
 
-  function openConnectModal() {
-    var c = state.connection;
+  function openConnectModal(opts) {
+    opts = opts || {};
+    var agent = currentAgent();
+
+    // Default to editing whichever scope already holds settings: if this agent
+    // has its own, that is almost certainly what needs changing.
+    connEditing = agent || null;
+    var scope = opts.scope || (agentHasOverride(agent) ? "agent" : "global");
+    if (!agent) scope = "global";
+
+    var sel = $("#conn-target");
+    if (sel) {
+      var agentOpt = sel.querySelector('option[value="agent"]');
+      if (agentOpt) {
+        agentOpt.disabled = !agent;
+        agentOpt.textContent = agent ? "This agent only (" + agent.name + ")" : "This agent only";
+      }
+      sel.value = scope;
+    }
+
+    var c = scope === "agent" && agent ? effectiveConn(agent) : state.connection;
+    var read = $("#conn-string-read");
+    if (read) { read.textContent = ""; read.className = "hint"; }
     $("#conn-mode").value = c.mode;
     $("#conn-string").value = c.connectionString || "";
     $("#conn-direct-url").value = c.directConnectUrl || "";
@@ -1437,9 +1635,9 @@
     $("#conn-schema").value = c.schemaName || "";
     $("#conn-cloud").value = c.cloud || "prod";
     $("#conn-agent-type").value = c.agentType || "published";
-    $("#conn-token-endpoint").value = c.tokenEndpoint;
-    $("#conn-client-id").value = c.clientId;
-    $("#conn-tenant-id").value = c.tenantId;
+    $("#conn-token-endpoint").value = c.tokenEndpoint || "";
+    $("#conn-client-id").value = c.clientId || "";
+    $("#conn-tenant-id").value = c.tenantId || "";
     $("#conn-scope").value = c.scope || (global.Connect ? global.Connect.DEFAULT_AGENT_SCOPE : "");
     var redirect = location.origin + location.pathname;
     $("#conn-redirect").textContent = redirect;
@@ -1578,7 +1776,7 @@
       return;
     }
 
-    state.connection = {
+    var next = {
       mode: mode,
       connectionString: form.connectionString,
       directConnectUrl: form.directConnectUrl,
@@ -1591,9 +1789,30 @@
       tenantId: form.tenantId,
       scope: form.scope
     };
+
+    var sel = $("#conn-target");
+    var toAgent = sel && sel.value === "agent" && connEditing;
+
+    if (toAgent) {
+      // Only keep what actually differs, so an agent that is merely pinned to
+      // a different transport does not freeze a stale copy of everything else.
+      var over = { mode: mode };
+      CONN_KEYS.forEach(function (k) {
+        if (next[k] && next[k] !== state.connection[k]) over[k] = next[k];
+      });
+      connEditing.conn = over;
+      // Retire the older per-agent shape so the two cannot disagree.
+      delete connEditing.m365;
+      logEvent("Connection settings saved", connEditing.name + " · " + mode, "ok");
+    } else {
+      state.connection = next;
+      logEvent("Connection settings saved", "Workspace default · " + mode, "ok");
+    }
+
     savePrefs();
     closeModals();
-    logEvent("Connection settings saved", mode, "ok");
+    renderAgents();
+    renderAgentMenu();
     toast("Reconnecting…");
     connectActiveChat();
   }
@@ -1604,6 +1823,11 @@
     if (!name || !url) { toast("Give the agent a name and a URL.", "err"); return; }
     if (!/^https:\/\//i.test(url)) { toast("The URL must start with https://", "err"); return; }
     var a = { id: uid(), name: name, url: url, desc: $("#agent-form-desc").value.trim(), builtin: false };
+
+    // An agent may be pinned to its own transport at the moment it is added.
+    var modeSel = $("#agent-form-mode");
+    if (modeSel && modeSel.value) a.conn = { mode: modeSel.value };
+
     state.agents.push(a);
     state.activeAgent = a.id;
     savePrefs();
@@ -1848,16 +2072,24 @@
       if (embedTimer) { clearTimeout(embedTimer); embedTimer = null; }
       $("#embed-loading").hidden = true;
     });
-    $("#embed-reload").addEventListener("click", function () { loadEmbed(); });
     $("#embed-open").addEventListener("click", openEmbedTab);
     $("#embed-open-2").addEventListener("click", openEmbedTab);
-    $("#embed-settings").addEventListener("click", openConnectModal);
+    $("#embed-settings").addEventListener("click", function () { openConnectModal(); });
     $("#embed-upgrade").addEventListener("click", function () {
-      state.connection.mode = "m365";
-      savePrefs();
-      syncConnFields();
-      toast("Switched to the Agents SDK transport");
-      connectActiveChat();
+      // Switching transport is now the agent's business, not the workspace's.
+      var agent = currentAgent();
+      if (agent) {
+        agent.conn = agent.conn && typeof agent.conn === "object" ? agent.conn : {};
+        agent.conn.mode = "m365";
+        savePrefs();
+        renderAgents();
+        renderAgentMenu();
+      } else {
+        state.connection.mode = "m365";
+        savePrefs();
+      }
+      openConnectModal({ scope: agent ? "agent" : "global" });
+      toast("Switched this agent to the Agents SDK. Finish the two required steps to connect.");
     });
 
     // Ask / confirm dialog
@@ -1886,8 +2118,17 @@
     });
 
     // Connection & sign-in
-    $("#connect-btn").addEventListener("click", openConnectModal);
+    $("#connect-btn").addEventListener("click", function () { openConnectModal(); });
     $("#conn-mode").addEventListener("change", syncConnFields);
+    $("#conn-target").addEventListener("change", function () {
+      // Re-read the settings for whichever scope was just chosen, so the form
+      // never shows one agent's values while pointed at another target.
+      openConnectModal({ scope: this.value });
+    });
+    $("#conn-embed-edit").addEventListener("click", function () {
+      closeModals();
+      openAgentModal();
+    });
     $("#conn-save").addEventListener("click", saveConnection);
     $("#conn-detect").addEventListener("click", detectEndpoint);
     $("#conn-string").addEventListener("change", applyConnectionString);
@@ -1899,7 +2140,9 @@
     ["#conn-env-id", "#conn-schema", "#conn-cloud", "#conn-agent-type", "#conn-direct-url"].forEach(function (sel) {
       $(sel).addEventListener("change", syncConnFields);
     });
-    $$("#conn-setup").forEach(function (b) { b.addEventListener("click", openConnectModal); });
+    $$("#conn-setup").forEach(function (b) {
+      b.addEventListener("click", function () { openConnectModal(); });
+    });
     $("#conn-signout").addEventListener("click", function () {
       if (!global.Connect) return;
       global.Connect.signOut().then(function () {
@@ -1920,6 +2163,19 @@
         savePrefs();
       });
     });
+
+    // How much of the embedded canvas's own header to hide behind our top bar.
+    var crop = $("#embed-crop");
+    if (crop) {
+      crop.value = String(state.embedCrop);
+      crop.addEventListener("change", function () {
+        state.embedCrop = Number(this.value) || 0;
+        applyEmbedCrop();
+        savePrefs();
+        // Nudge the frame so the new window takes effect immediately.
+        if (!$("#embed-pane").hidden) loadEmbed();
+      });
+    }
 
     $("#reset-btn").addEventListener("click", function () {
       askConfirm("Erase everything in this browser?", {
@@ -2038,6 +2294,7 @@
       })
       .then(function () {
         applyTheme(state.theme || "light");
+        applyEmbedCrop();
         hydrateIcons();
         renderAgentMenu();
         renderLog();
@@ -2061,12 +2318,12 @@
             onStage: function (label) {
               // Mirror what the agent is doing into the connection tooltip.
               var el = $("#conn-status");
-              if (el && el.textContent === "Live") el.title = MODE_LABEL[state.connection.mode] + " · " + label;
+              if (el && el.textContent === "Live") el.title = MODE_LABEL[activeMode()] + " · " + label;
             },
             onConnected: function (c) {
               logEvent(
                 "Connected",
-                ((currentAgent() || {}).name || "Agent") + " · " + (MODE_LABEL[state.connection.mode] || "") +
+                ((currentAgent() || {}).name || "Agent") + " · " + (MODE_LABEL[activeMode()] || "") +
                   (c.resumed ? " · resumed" : " · new conversation"),
                 "ok"
               );

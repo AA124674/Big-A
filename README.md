@@ -36,14 +36,27 @@ app so people can sign in, and publish the agent.
 ### 1. Copy the connection details
 
 1. Open your agent in **Copilot Studio**
-2. Go to **Channels → Web app** (or **Native app**)
-3. Copy the details shown under **Microsoft 365 Agents SDK**
+2. Open the agent's **Channels** page, then pick **Web app** (or **Native app**)
+3. Copy the value shown under **Microsoft 365 Agents SDK**
 
-If your Channels page does not show it, you can use the two values it is built
-from instead, found under **Settings → Advanced → Metadata**:
+**Cannot find Channels?** It is a page belonging to the agent, not a tab in the
+environment or a top-level menu item. Open the agent first, and Channels sits
+alongside Overview, Knowledge, Tools, Topics and Activity. If your tenant is on
+a build that does not surface it, use the fallback below instead.
 
-- **Environment ID**
+**Fallback.** Everything the connection string carries can be rebuilt from two
+values under **Settings → Advanced → Metadata**:
+
+- **Environment ID** (paste it with or without the `Default-` prefix; BIG A
+  strips it either way)
 - **Schema name** (looks like `cr123_myAgent`)
+
+Paste either one into the Step 1 box. That box is deliberately forgiving: it
+accepts the connection string, a plain agent URL, a full HTML embed snippet, or
+a block of `Label: value` lines copied out of Copilot Studio's **Session
+details** panel. Press **Read what I pasted** and it will name every field it
+recognised, so a half-understood paste is obvious immediately rather than
+turning into a mystery 404 later.
 
 ### 2. Register an application for sign-in
 
@@ -67,12 +80,26 @@ In the **Azure portal → Microsoft Entra ID → App registrations → New**:
 
 In BIG A, open **Connection settings** (or `Ctrl/Cmd + K` → "connection"):
 
-1. Leave the mode on **Microsoft 365 Agents SDK**
-2. Paste the connection string — the environment ID, schema name and tenant ID
-   fill themselves in
-3. Paste the **Application (client) ID**
-4. Press **Sign in with Microsoft**, then **Test connection**
+1. Choose who the settings are for. **This agent only** keeps them against the
+   current agent; **Every agent** saves them as the workspace default.
+2. Leave the mode on **Microsoft 365 Agents SDK**
+3. **Step 1** — paste the connection string. The environment ID, schema name and
+   tenant ID fill themselves in, and the line underneath shows the exact
+   endpoint the settings resolve to.
+4. **Step 2** — paste the **Application (client) ID**, then press **Sign in with
+   Microsoft** and **Test connection**
 5. **Save & connect**
+
+Those two steps are everything that is required. Cloud, agent type, direct URL
+and token scope live in the collapsed **Advanced** section and can be left
+alone unless you are on a sovereign cloud or testing an unpublished agent.
+
+### Mixing transports
+
+The connection mode is per agent. An agent with no settings of its own uses the
+workspace default, and any agent can be pinned to a different transport, so one
+agent can run on the Agents SDK while another stays on the legacy embed. Set it
+when adding the agent, or later via **This agent only** in Connection settings.
 
 ### 4. Publish the agent
 
@@ -92,6 +119,9 @@ BIG A turns the common failures into plain English, but for reference:
 | `AADSTS65001` | Admin consent is outstanding |
 | Sign-in window never opens | The browser blocked the popup — use **Sign in via redirect** instead |
 | Nothing happens on the Channels page | Your agent predates the change; use the legacy Direct Line mode |
+| The embed shows "I'm your new agent" and prompt cards | That is Copilot Studio's demo site, not your agent. BIG A rewrites the URL to the embeddable canvas automatically; if you still see it, the agent's URL points somewhere other than `/environments/{id}/bots/{schema}/...` |
+| No **Embed code** offered in Copilot Studio | Embed code is only shown while the agent's **Security → Authentication** is set to **No authentication** |
+| A strip of the embed is cut off, or its header still shows | Adjust **Hide embedded header** in Settings. It defaults to 60px |
 
 ## Known limitations
 
@@ -104,6 +134,15 @@ These are real constraints, not oversights:
 - **No anonymous access.** Every visitor needs a Microsoft account with access
   to the agent. If you need an unauthenticated public chat, that is what the
   legacy embed mode is for.
+- **The legacy embed cannot be restyled.** Its contents belong to
+  `copilotstudio.microsoft.com`, and the browser's same-origin policy forbids
+  reaching into another origin's document. No CSS, script or setting can change
+  its typography, colours or layout, and there is no supported theming
+  parameter. BIG A does the two things that *are* possible: it loads the
+  embeddable canvas rather than the demo site, and it crops the canvas's own
+  header out of sight behind this app's top bar (**Settings → Hide embedded
+  header**). For an interface that actually matches the rest of the app, the
+  Agents SDK mode is the only route.
 - **Web search, charts and tools are agent-side features.** BIG A renders their
   output and reports their progress, but cannot switch them on — configure
   those in Copilot Studio.

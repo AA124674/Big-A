@@ -1939,61 +1939,42 @@ body.zen .stage { padding: 0; }
 }
 .embed-pane[hidden] { display: none; }
 
-.embed-bar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  padding: 8px 14px;
-  border-bottom: 1px solid var(--line);
-  background: var(--surface);
-}
-
-.embed-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 9px;
-  border-radius: 999px;
-  background: var(--warn-wash);
-  color: var(--warn);
-  font-size: 11.5px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-.embed-badge svg { width: 13px; height: 13px; }
-
-.embed-note {
-  font-size: 12px;
-  color: var(--ink-muted);
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.embed-bar-acts {
-  margin-left: auto;
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
 .embed-stage {
   position: relative;
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
+  padding: 10px 12px 12px;
+  background: var(--paper);
 }
 
-.embed-stage #agent-frame {
+/* The clip window. The frame inside it is taller than the window by
+   --embed-crop and pulled up by the same amount, so Copilot Studio's own blue
+   header slides out of sight behind this app's top bar. The crop cannot be
+   done from inside the frame: its contents belong to another origin. */
+.embed-clip {
+  position: relative;
   flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.embed-clip #agent-frame {
+  position: absolute;
+  left: 0;
+  top: calc(-1 * var(--embed-crop, 0px));
   width: 100%;
-  height: 100%;
+  height: calc(100% + var(--embed-crop, 0px));
   border: 0;
   display: block;
-  background: transparent;
-  color-scheme: normal;
+  background: #fff;
+  /* The canvas ships only a light theme. Forcing light here stops the browser
+     handing it a dark form-control palette that it was never designed for. */
+  color-scheme: light;
 }
 
 .embed-loading,
@@ -2045,8 +2026,8 @@ body.zen .stage { padding: 0; }
 }
 
 @media (max-width: 640px) {
-  .embed-note { display: none; }
-  .embed-bar-acts { margin-left: auto; }
+  .embed-stage { padding: 0; }
+  .embed-clip { border-radius: 0; border-width: 1px 0 0; }
 }
 
 /* ----------------------------------------------------- ask/confirm dialog */
@@ -2083,3 +2064,98 @@ body.zen .stage { padding: 0; }
 .btn-danger:hover { background: #8E3626; }
 [data-theme="dark"] .btn-danger { background: #B4553A; }
 [data-theme="dark"] .btn-danger:hover { background: #C56546; }
+
+/* ---- Legacy embed chrome, folded into the main top bar ---- */
+
+.embed-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--warn-wash);
+  color: var(--warn);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+.embed-badge svg { width: 13px; height: 13px; }
+.embed-badge[hidden] { display: none; }
+
+.topbar-embed-acts {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+.topbar-embed-acts[hidden] { display: none; }
+
+/* ---- Connection dialog: required steps first, options last ---- */
+
+.conn-scope-row {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-sunk, var(--surface));
+  margin-bottom: 16px;
+}
+.conn-scope-row > label { margin-bottom: 6px; }
+
+.conn-step {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px 16px 6px;
+  margin-bottom: 16px;
+  background: var(--surface);
+}
+.conn-step[hidden] { display: none; }
+
+.conn-step-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  margin: 0 0 14px;
+}
+.conn-step-no {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--clay);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 650;
+  margin-top: 1px;
+}
+.conn-step-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.conn-step-title strong { font-size: 14px; font-weight: 600; color: var(--ink); }
+.conn-step-title small { font-size: 12px; line-height: 1.55; color: var(--ink-muted); }
+
+.conn-inline-acts {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 8px 0 2px;
+}
+.conn-inline-acts .hint { margin: 0; }
+.conn-inline-acts .hint.ok { color: var(--green, #3D9A6B); }
+.conn-inline-acts .hint.err { color: #A6412F; }
+
+.conn-advanced { margin-bottom: 4px; }
+.conn-advanced[open] { padding-bottom: 6px; }
+.conn-advanced .field-row { margin-top: 10px; }
+
+.set-select {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  font-family: inherit;
+}
