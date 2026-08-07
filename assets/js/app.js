@@ -1540,6 +1540,14 @@
       var isDefaultEnv = !!(a && a.url && dl && dl.isDefaultAlias &&
         dl.isDefaultAlias(dl.environmentSegment(a.url)));
       envCallout.hidden = !needsLegacy || !isDefaultEnv;
+
+      var warn = $("#conn-legacy-env-warn");
+      if (warn) {
+        var problem = describeEnvIdProblem($("#conn-legacy-env-id").value);
+        warn.textContent = problem;
+        warn.hidden = !problem;
+        warn.className = problem ? "hint err" : "hint";
+      }
     }
     // Advanced settings only mean anything to the two direct transports.
     var adv = $("#conn-advanced");
@@ -1605,6 +1613,43 @@
     } catch (e) {
       return e.message;
     }
+  }
+
+  var GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  /**
+   * Returns a plain-English complaint about an environment ID, or "" if it
+   * looks usable.
+   *
+   * The second check is the important one. The agent URL of a default
+   * environment reads "Default-{tenantId}", and it is entirely natural to
+   * assume the GUID after the prefix IS the environment ID. It is not, and
+   * pasting it back in produces a hostname that does not resolve, so the only
+   * feedback is "unreachable" with nothing to suggest what went wrong.
+   */
+  function describeEnvIdProblem(raw) {
+    var id = String(raw || "").trim();
+    if (!id) return "";
+    if (/^Default-/i.test(id)) {
+      return "That is the environment's alias, not its ID. Open Copilot Studio " +
+        "\u203A Settings \u203A Advanced \u203A Metadata and copy the Environment ID.";
+    }
+    if (!GUID_RE.test(id)) {
+      return "An environment ID is a GUID, like 00000000-0000-0000-0000-000000000000. " +
+        "Copy it from Copilot Studio \u203A Settings \u203A Advanced \u203A Metadata.";
+    }
+    var a = currentAgent();
+    var dl = global.DirectLine;
+    if (a && a.url && dl && dl.environmentSegment) {
+      var seg = dl.environmentSegment(a.url);
+      if (dl.isDefaultAlias(seg) &&
+          seg.replace(/^Default-/i, "").toLowerCase() === id.toLowerCase()) {
+        return "That GUID is your tenant ID, taken from the agent's URL. The environment " +
+          "ID is a different value: open Copilot Studio \u203A Settings \u203A Advanced " +
+          "\u203A Metadata and copy the Environment ID from there.";
+      }
+    }
+    return "";
   }
 
   function readConnForm() {
@@ -1918,9 +1963,16 @@
         return;
       }
     }
-    if (mode === "directline" && !endpoint) {
-      toast("Direct Line needs a token endpoint. If Copilot Studio no longer shows one, use the Agents SDK instead.", "err");
-      return;
+    // The native transport deliberately has NO required fields: the address is
+    // discovered from the agent's URL. It used to demand a token endpoint here,
+    // which silently blocked saving anything else on this panel, including the
+    // environment ID that default-environment agents cannot work without.
+    if (mode === "directline" && form.environmentId) {
+      var envProblem = describeEnvIdProblem(form.environmentId);
+      if (envProblem) {
+        toast(envProblem, "err");
+        return;
+      }
     }
 
     var next = {
@@ -2383,6 +2435,7 @@
       .forEach(function (pair) {
         $(pair[0]).addEventListener("input", function () {
           $(pair[1]).value = this.value;
+          syncConnFields();
         });
       });
     $$("#conn-setup").forEach(function (b) {

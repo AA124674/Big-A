@@ -100,6 +100,20 @@
       );
     });
 
+    // The Copilot Studio host itself, using the environment segment exactly as
+    // it appears in the URL. This is the one candidate that needs no
+    // environment ID at all, because it never has to build a hostname, so it
+    // is the only hope for a default-environment agent whose ID is unknown.
+    // It is the same origin the ready-made embed loads from, so if the embed
+    // works this address exists; whether the browser is allowed to read the
+    // response cross-origin is a separate question, and the attempts list will
+    // say which of the two failed.
+    out.push(
+      u.origin + "/environments/" + encodeURIComponent(envRaw) +
+      "/bots/" + encodeURIComponent(schema) +
+      "/directline/token?api-version=" + DEFAULT_API_VERSION
+    );
+
     // Legacy host, still live for older agents.
     out.push(
       "https://powerva.microsoft.com/api/botmanagement/v1/directline/directlinetoken" +
@@ -200,7 +214,16 @@
         "your tenant ID rather than the environment ID, so the address cannot be worked out from " +
         "the URL alone. Paste the Environment ID from Copilot Studio: Settings \u203A Advanced \u203A " +
         "Metadata."
-      : "";
+      // An environment ID WAS given and nothing answered. Either the ID is
+      // wrong (very easy: the GUID in the agent's URL is the tenant, not the
+      // environment) or this agent has no anonymous Direct Line channel.
+      : envId
+        ? " An Environment ID was supplied, so either it is not the right one, or this agent " +
+          "does not expose an anonymous Direct Line channel. Check the ID against Copilot Studio: " +
+          "Settings \u203A Advanced \u203A Metadata, making sure it is not the tenant ID from the " +
+          "agent's own URL. If it is correct, paste the Token Endpoint from Settings \u203A " +
+          "Channels \u203A Mobile app, or switch this agent to the Agents SDK mode."
+        : "";
 
     var best = null;
     var attempts = [];
@@ -218,9 +241,11 @@
     }, Promise.resolve(null)).then(function (found) {
       if (found) return found;
       var e = best || new Error("Could not reach any Direct Line token endpoint.");
-      if (defaultEnvHint && e.message.indexOf("Environment ID") === -1) {
+      // Guard against appending twice if this error object is reused.
+      if (defaultEnvHint && !e.envHinted) {
         e.message += defaultEnvHint;
-        e.needsEnvId = true;
+        e.envHinted = true;
+        e.needsEnvId = !envId;
       }
       // Carry the full picture so the UI can show what was actually tried,
       // rather than a single status code with no context.

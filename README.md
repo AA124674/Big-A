@@ -165,13 +165,31 @@ it points at a host that does not exist, so the request fails with nothing
 useful to say. The legacy fallback host then answers `400` for an agent it
 does not host, and that `400` is what used to get reported.
 
-The fix is one box. In Copilot Studio open **Settings › Advanced › Metadata**
-and copy the **Environment ID**, then paste it into Connection settings.
-BIG A detects the `Default-` alias and shows the box automatically, so if the
-box is not on screen, this is not your problem.
+BIG A now works around this without being told anything: alongside the derived
+address it also tries Copilot Studio's own host with the environment segment
+copied verbatim, which never has to build a hostname and so cannot get it
+wrong. Try connecting before reaching for anything below.
+
+If that address is refused, fill in the box. In Copilot Studio open
+**Settings › Advanced › Metadata** and copy the **Environment ID**, then paste
+it into Connection settings. BIG A detects the `Default-` alias and shows the
+box automatically, so if the box is not on screen, this is not your problem.
+
+**Do not copy the GUID out of the agent's own URL.** The one after `Default-`
+is the tenant ID. It is a valid-looking GUID, it is the obvious thing to
+reach for, and it will not work. BIG A now refuses it with an explanation
+rather than letting it fail as "unreachable".
 
 The same environment ID is used by the Agents SDK mode, so filling in either
 box fills in both.
+
+### Last resort
+
+If no derived address answers, the agent may simply have no anonymous Direct
+Line channel. Either paste the **Token Endpoint** from
+**Settings › Channels › Mobile app** into the optional box, or switch that
+agent to the Agents SDK mode, which authenticates instead of relying on
+anonymous access.
 
 ### If your network blocks the sign-in library
 
