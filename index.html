@@ -529,9 +529,9 @@
       <label for="agent-form-mode">How this agent connects</label>
       <select id="agent-form-mode">
         <option value="">Use the workspace default</option>
-        <option value="directline">Legacy &mdash; BIG A canvas (no setup)</option>
-        <option value="iframe">Legacy &mdash; Copilot Studio's own canvas in a frame</option>
-        <option value="m365">Full client &mdash; Microsoft 365 Agents SDK</option>
+        <option value="m365">Recommended: Microsoft 365 Agents SDK</option>
+        <option value="directline">Legacy: BIG A canvas (Token Endpoint required)</option>
+        <option value="iframe">Legacy: Copilot Studio's own canvas in a frame</option>
       </select>
       <div class="hint">Set per agent, so one agent can use the full client while another stays on
         a legacy transport. Changeable later in Connection settings.</div>
@@ -663,10 +663,10 @@
     <div class="field">
       <label for="conn-mode">How this page reaches the agent</label>
       <select id="conn-mode">
-        <option value="directline">Legacy &mdash; BIG A canvas (recommended, no setup)</option>
-        <option value="iframe">Legacy &mdash; Copilot Studio's own canvas in a frame</option>
-        <option value="m365">Full client &mdash; Microsoft 365 Agents SDK (needs Azure setup)</option>
-        <option value="sso">Legacy &mdash; BIG A canvas with single sign-on</option>
+        <option value="m365">Recommended: Microsoft 365 Agents SDK (requires Entra setup)</option>
+        <option value="directline">Legacy: BIG A canvas (Token Endpoint required)</option>
+        <option value="iframe">Legacy: Copilot Studio's own canvas in a frame</option>
+        <option value="sso">Legacy: BIG A canvas with single sign-on</option>
       </select>
       <p class="hint" id="conn-mode-hint"></p>
     </div>
@@ -692,10 +692,10 @@
             <span class="hint" id="conn-string-read"></span>
           </div>
           <p class="hint">
-            Anything with the identifiers in it works here: the
-            <strong>Microsoft 365 Agents SDK connection string</strong>, the website
-            <strong>embed code</strong>, the agent&rsquo;s web chat address, or the
-            <strong>Session details</strong> panel from Copilot Studio&rsquo;s settings.
+            Prefer the complete <strong>Microsoft 365 Agents SDK connection string</strong>
+            from the agent&rsquo;s Channels page. A direct-connect URL, embed code, web chat
+            address, or Session details block can also be read, but may not contain every
+            value needed to connect.
           </p>
         </div>
 
@@ -711,10 +711,11 @@
           </div>
         </div>
         <p class="hint">
-          To read them off by hand instead: open the agent, then
-          <strong>Settings</strong> &rsaquo; <strong>Advanced</strong> &rsaquo; <strong>Metadata</strong>,
-          which lists the Environment ID, Tenant ID and Schema name.
-          A <code>Default-</code> prefix on the environment ID is removed for you.
+          If entering values by hand, use the schema name from
+          <strong>Settings</strong> &rsaquo; <strong>Advanced</strong> &rsaquo; <strong>Metadata</strong>.
+          If the environment value starts with <code>Default-</code>, it is an environment
+          name containing the tenant ID, not the Environment ID. Get the Environment ID from
+          Power Platform admin center &rsaquo; Manage &rsaquo; Environments &rsaquo; Details.
         </p>
         <p class="hint conn-target-line" id="conn-resolved"></p>
       </section>
@@ -795,17 +796,15 @@
         <header class="conn-step-head">
           <span class="conn-step-no">1</span>
           <span class="conn-step-title">
-            <strong>Nothing to fill in</strong>
-            <small>The address is worked out from the agent&rsquo;s URL. Just press Test.</small>
+            <strong>Enter the legacy Token Endpoint</strong>
+            <small>Required. This mode is unavailable when Copilot Studio does not show one.</small>
           </span>
         </header>
 
-        <p class="hint">This mode needs only two things, and both are usually already true:
-          the agent is <strong>published</strong>, and its security is set to
-          <strong>No authentication</strong> (Copilot Studio &rsaquo; <strong>Settings</strong>
-          &rsaquo; <strong>Security</strong> &rsaquo; <strong>Authentication</strong>). That is
-          the same requirement as the ready-made embed code, so if the embed works, this works
-          and gives you a far better canvas.</p>
+        <p class="hint">This mode is retained for older agents. The agent must be
+          <strong>published</strong>, use <strong>No authentication</strong>, and show a
+          <strong>Token Endpoint</strong> on its Channels page. An embed working does not prove
+          that anonymous Direct Line is available.</p>
 
         <!-- Shown by app.js only when the agent sits in the DEFAULT environment,
              where the URL carries the tenant ID instead of the environment ID and
@@ -813,35 +812,40 @@
         <div class="conn-callout warn" id="conn-legacy-envid" hidden>
           <strong>This agent needs one box filled in.</strong>
           <p>Its URL says <code>Default-&hellip;</code>, which is the environment&rsquo;s
-            <em>alias</em>, not its ID, so the address cannot be worked out from the URL alone.
-            In Copilot Studio open <strong>Settings</strong> &rsaquo; <strong>Advanced</strong>
-            &rsaquo; <strong>Metadata</strong> and copy the <strong>Environment ID</strong>.</p>
+            <em>name</em>, not its ID, so the address cannot be worked out from the URL alone.</p>
+          <p><strong>Copilot Studio shows the wrong value here.</strong> Its Session details
+            panel prints <code>Environment ID: Default-&hellip;</code>, which is the name again.
+            The real ID is a plain GUID with no prefix, and only the admin centre shows it:
+            <a href="https://admin.powerplatform.microsoft.com" target="_blank"
+               rel="noopener">admin.powerplatform.microsoft.com</a> &rsaquo;
+            <strong>Manage</strong> &rsaquo; <strong>Environments</strong> &rsaquo; your
+            environment &rsaquo; <strong>Details</strong>.</p>
           <div class="field">
             <label for="conn-legacy-env-id">Environment ID</label>
             <input type="text" id="conn-legacy-env-id" spellcheck="false"
                    placeholder="00000000-0000-0000-0000-000000000000">
             <p class="hint" id="conn-legacy-env-warn" hidden></p>
-            <p class="hint">Do not copy the GUID out of the agent&rsquo;s own URL. The one
-              after <code>Default-</code> is your <em>tenant</em> ID, which is a different
-              value and will not work.</p>
+            <p class="hint">You can paste the bare GUID, a whole <strong>Agents SDK connection
+              string</strong>, or a token endpoint URL. The ID will be taken out of whichever
+              you give it. Do not paste the GUID from the agent&rsquo;s own URL: that one is
+              your <em>tenant</em> ID and will not work.</p>
           </div>
         </div>
 
         <!-- A distinct class from #conn-advanced below, which is a different
              disclosure with its own show/hide rules. -->
-        <details class="conn-optional">
-          <summary>Optional &mdash; set the token endpoint by hand</summary>
+        <details class="conn-optional" open>
+          <summary>Token Endpoint</summary>
           <div class="field">
             <label for="conn-token-endpoint">Token endpoint</label>
             <input type="url" id="conn-token-endpoint" spellcheck="false"
-                   placeholder="Leave blank to work it out automatically">
+                   placeholder="https://.../directline/token?api-version=...">
             <div class="conn-inline-acts">
               <button class="btn btn-ghost btn-sm" id="conn-detect" type="button">Detect automatically</button>
             </div>
-            <p class="hint">Leave this empty unless automatic detection fails. If you do need it,
-              it is in Copilot Studio &rsaquo; <strong>Channels</strong> &rsaquo;
-              <strong>Mobile app</strong> &rsaquo; <strong>Token Endpoint</strong>. Not every agent
-              shows that channel; automatic detection does not depend on it.</p>
+            <p class="hint">Copy this from Copilot Studio &rsaquo; <strong>Channels</strong> &rsaquo;
+              <strong>Mobile app</strong> &rsaquo; <strong>Token Endpoint</strong>. If the page only
+              shows a Microsoft 365 Agents SDK connection string, switch to that mode instead.</p>
           </div>
         </details>
       </section>
@@ -908,8 +912,9 @@
           <label for="conn-scope">Sign-in scope</label>
           <input type="text" id="conn-scope" spellcheck="false"
                  placeholder="https://api.powerplatform.com/CopilotStudio.Copilots.Invoke">
-          <p class="hint">Leave the default for the full client. For legacy single sign-on, use the scope
-            exposed by your <strong>authentication</strong> app registration instead.</p>
+          <p class="hint">Leave blank to use the correct Power Platform scope for the selected cloud.
+            For legacy single sign-on, use the scope exposed by your
+            <strong>authentication</strong> app registration instead.</p>
         </div>
 
         <details class="setup-help">

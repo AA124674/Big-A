@@ -1,0 +1,43 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never cancel an in-flight Pages deployment: cancelling mid-flight is what
+# wedges the environment and makes later runs unable to acquire the lock.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
+        with:
+          # Default is 600000 ms (10 min). GitHub Pages runner allocation can
+          # lag well past that during an incident, so allow 30 min.
+          timeout: 1800000
+          # Tolerate transient status-check errors before giving up.
+          error_count: 20
+          reporting_interval: 10000
