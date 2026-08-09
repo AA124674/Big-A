@@ -67,11 +67,31 @@
    */
   function environmentHost(environmentId, cloud) {
     var info = cloudInfo(cloud);
-    var hex = String(environmentId || "").replace(/[^0-9a-z]/gi, "").toLowerCase();
-    if (hex.length < 8) return null;
-    var prefix = hex.slice(0, hex.length - info.idSuffix);
-    var suffix = hex.slice(hex.length - info.idSuffix);
+    var value = String(environmentId || "").trim();
+    if (!/^(?:Default-)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)) {
+      return null;
+    }
+    // `Default-` is part of the DNS name for default environments. Strip
+    // punctuation only after validation, and preserve the complete value.
+    var compact = value.replace(/[^0-9a-z]/gi, "").toLowerCase();
+    var prefix = compact.slice(0, compact.length - info.idSuffix);
+    var suffix = compact.slice(compact.length - info.idSuffix);
     return "https://" + prefix + "." + suffix + "." + info.host;
+  }
+
+  /** Validate and normalize a Direct-to-Engine bot URL before using a token. */
+  function validateDirectConnectUrl(raw) {
+    var u;
+    try { u = new URL(String(raw || "").trim()); } catch (e) { return null; }
+    var approvedHost = Object.keys(CLOUDS).some(function (name) {
+      var suffix = "." + CLOUDS[name].host.toLowerCase();
+      return u.hostname.toLowerCase().slice(-suffix.length) === suffix;
+    });
+    if (u.protocol !== "https:" || !approvedHost || u.username || u.password) return null;
+    var path = u.pathname.replace(/\/+$/, "");
+    path = path.replace(/\/conversations(\/[^/]*)?$/i, "");
+    if (!/\/copilotstudio\/(dataverse-backed|prebuilt)\/authenticated\/bots\/[^/]+$/i.test(path)) return null;
+    return u.origin + path;
   }
 
   /**
@@ -82,13 +102,7 @@
     settings = settings || {};
 
     if (settings.directConnectUrl) {
-      var raw = String(settings.directConnectUrl).trim();
-      var u;
-      try { u = new URL(raw); } catch (e) { return null; }
-      // Accept a full conversations URL too, and trim back to the bot root.
-      var path = u.pathname.replace(/\/+$/, "");
-      path = path.replace(/\/conversations(\/[^/]*)?$/i, "");
-      return u.origin + path;
+      return validateDirectConnectUrl(settings.directConnectUrl);
     }
 
     var host = environmentHost(settings.environmentId, settings.cloud);
@@ -194,7 +208,10 @@
           label === "timestamp" || label === "theme") return;
 
       if (label === "environmentid") {
-        out.environmentId = value.replace(/^Default-/i, "");
+        // Preserve the complete value. Default environments are legitimately
+        // identified as "Default-{tenantId}" and the "default" text forms
+        // part of the environment API hostname.
+        out.environmentId = value;
         found = true;
         return;
       }
@@ -250,7 +267,7 @@
     var envIdx = parts.indexOf("environments");
     var botIdx = parts.indexOf("bots");
     if (envIdx > -1 && parts[envIdx + 1]) {
-      out.environmentId = decodeURIComponent(parts[envIdx + 1]).replace(/^Default-/i, "");
+      out.environmentId = decodeURIComponent(parts[envIdx + 1]);
     }
     if (botIdx > -1 && parts[botIdx + 1]) {
       out.schemaName = decodeURIComponent(parts[botIdx + 1]);
@@ -258,7 +275,7 @@
     // Some embed URLs carry the identifiers as query parameters instead.
     ["environmentId", "envId"].forEach(function (q) {
       var v = u.searchParams.get(q);
-      if (v && !out.environmentId) out.environmentId = v.replace(/^Default-/i, "");
+      if (v && !out.environmentId) out.environmentId = v;
     });
     ["botSchema", "schemaName", "agentIdentifier"].forEach(function (q) {
       var v = u.searchParams.get(q);
@@ -268,7 +285,7 @@
   }
 
   function normalise(out) {
-    if (out.environmentId) out.environmentId = out.environmentId.replace(/^Default-/i, "").trim();
+    if (out.environmentId) out.environmentId = out.environmentId.trim();
     if (out.cloud) out.cloud = out.cloud.toLowerCase();
     // Copilot Studio writes "Published"/"Prebuilt"; the form and the URL
     // builder both work in lower case.
@@ -433,7 +450,7 @@
    * opts: { settings, getToken, conversationId, userId,
    *         onActivity, onStatus, onError, useExperimentalEndpoint }
    *
-   * `getToken(forceRefresh)` returns a Promise for a bearer token, so an
+   * `getToken({ forceRefresh })` returns a Promise for a bearer token, so an
    * expired token is renewed transparently rather than dropping the chat.
    */
   function Client(opts) {
@@ -455,6 +472,8 @@
     this.domain = this.base;
     this.resumed = false;
     this.seen = Object.create(null);
+    this.streams = Object.create(null);
+    this.greetingSentOnStart = false;
   }
 
   Client.prototype._url = function (path) {
@@ -479,7 +498,7 @@
       return Promise.reject(configError());
     }
 
-    return self.getToken(!!retry).then(function (token) {
+    return self.getToken({ forceRefresh: !!retry }).then(function (token) {
       if (!token) throw signInError();
       var headers = self._headers(token);
       if (self.conversationId) headers["x-ms-conversationid"] = self.conversationId;
@@ -496,9 +515,12 @@
         if (convId) self.conversationId = convId;
 
         // The service can hand back a region-specific host to use from here on.
+        // Apply the same strict allowlist used for manually pasted URLs before
+        // any subsequent request can carry a bearer token to that endpoint.
         if (self.useExperimentalEndpoint) {
           var alt = res.headers.get("x-ms-d2e-experimental");
-          if (alt) { try { self.experimentalBase = new URL(alt).origin + new URL(alt).pathname.replace(/\/+$/, ""); } catch (e) { noop(); } }
+          var validatedAlt = alt && validateDirectConnectUrl(alt);
+          if (validatedAlt) self.experimentalBase = validatedAlt;
         }
 
         self.inFlight += 1;
@@ -512,6 +534,7 @@
           if (act.conversation && act.conversation.id && !self.conversationId) {
             self.conversationId = act.conversation.id;
           }
+          self._accumulateStream(act);
           self._emit(act);
         }).then(function () {
           self.inFlight = Math.max(0, self.inFlight - 1);
@@ -524,11 +547,47 @@
     });
   };
 
-  /** Streamed activities repeat their ID as they grow; only skip exact dupes. */
+  function streamInfo(activity) {
+    var entities = activity && Array.isArray(activity.entities) ? activity.entities : [];
+    var entity = entities.filter(function (e) {
+      return e && String(e.type || "").toLowerCase() === "streaminfo";
+    })[0] || {};
+    var cd = (activity && activity.channelData) || {};
+    return {
+      type: String(entity.streamType || cd.streamType || "").toLowerCase(),
+      id: entity.streamId || cd.streamId || "",
+      sequence: Number(entity.streamSequence || cd.streamSequence || 0)
+    };
+  }
+
+  /**
+   * The current SDK sends partial answer chunks as typing activities carrying
+   * a streaminfo entity. Accumulate them by sequence before handing them to the
+   * canvas, matching the official client rather than displaying raw fragments.
+   */
+  Client.prototype._accumulateStream = function (activity) {
+    if (!activity || activity.type !== "typing") return;
+    var info = streamInfo(activity);
+    if (info.type !== "streaming" || !info.id || !info.sequence) return;
+    var parts = this.streams[info.id] || [];
+    var replaced = false;
+    parts = parts.map(function (part) {
+      if (part.sequence !== info.sequence) return part;
+      replaced = true;
+      return { sequence: info.sequence, text: activity.text || "" };
+    });
+    if (!replaced) parts.push({ sequence: info.sequence, text: activity.text || "" });
+    parts.sort(function (a, b) { return a.sequence - b.sequence; });
+    this.streams[info.id] = parts;
+    activity.text = parts.map(function (part) { return part.text; }).join("");
+  };
+
+  /** Streamed activities repeat IDs; only suppress byte-for-byte duplicates. */
   Client.prototype._emit = function (activity) {
-    var key = activity.id
-      ? activity.id + "|" + (activity.text || "").length + "|" + (activity.type || "")
-      : (activity.timestamp || "") + "|" + (activity.text || "");
+    var info = streamInfo(activity);
+    var key = (activity.id || activity.timestamp || "") + "|" +
+      (activity.type || "") + "|" + info.id + "|" + info.sequence + "|" +
+      (activity.text || "");
     if (this.seen[key]) return;
     this.seen[key] = 1;
     this.onActivity(activity);
@@ -549,8 +608,9 @@
       return Promise.resolve(self);
     }
 
+    self.greetingSentOnStart = opts.greeting !== false;
     return self._post("/conversations", {
-      emitStartConversationEvent: opts.greeting !== false
+      emitStartConversationEvent: self.greetingSentOnStart
     }).then(function () {
       if (!self.conversationId) throw new Error("Copilot Studio opened a stream but returned no conversation ID.");
       self.resumed = false;
@@ -584,6 +644,7 @@
       if (err && (err.status === 404 || err.status === 400 || err.status === 410)) {
         self.conversationId = null;
         self.seen = Object.create(null);
+        self.streams = Object.create(null);
         return self.start({ greeting: false }).then(function () {
           payload.conversation = { id: self.conversationId };
           return send();
@@ -714,6 +775,7 @@
     Client: Client,
     parseConnection: parseConnection,
     baseUrl: baseUrl,
+    validateDirectConnectUrl: validateDirectConnectUrl,
     environmentHost: environmentHost,
     isConfigured: isConfigured,
     webChatUrl: webChatUrl,

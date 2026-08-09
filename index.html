@@ -2,6 +2,17 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
+<!-- A response-header CSP is preferable in production, but GitHub Pages cannot
+     send custom headers, so this meta policy is the enforced one. README.md
+     carries the identical policy as a `Content-Security-Policy:` header for
+     hosts that can send it.
+
+     connect-src and frame-src are enumerated rather than a blanket `https:`,
+     so a bearer token cannot be posted to an origin outside Microsoft sign-in,
+     the Power Platform environment APIs, Direct Line and the attachment hosts
+     those services actually use. A legacy "iframe" embed pointing at a
+     non-Microsoft canvas needs its host added to frame-src. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://unpkg.com https://cdn.botframework.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' blob: https://login.microsoftonline.com https://login.microsoftonline.us https://login.partner.microsoftonline.cn https://*.environment.api.powerplatform.com https://*.environment.api.preprod.powerplatform.com https://*.environment.api.gov.powerplatform.microsoft.us https://*.environment.api.high.powerplatform.microsoft.us https://*.environment.api.appsplatform.us https://*.environment.api.powerplatform.partner.microsoftonline.cn https://*.api.powerplatform.com https://powerva.microsoft.com https://*.powerva.microsoft.com https://copilotstudio.microsoft.com https://directline.botframework.com https://*.directline.botframework.com https://*.botframework.com https://*.blob.core.windows.net https://cdn.jsdelivr.net https://unpkg.com https://cdn.botframework.com wss://directline.botframework.com wss://*.directline.botframework.com; frame-src 'self' blob: https://copilotstudio.microsoft.com https://powerva.microsoft.com https://*.powerva.microsoft.com https://*.powervirtualagents.com https://*.botframework.com https://*.blob.core.windows.net; media-src 'self' blob: https:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
 <title>BIG A — your intelligent workspace</title>
@@ -192,7 +203,7 @@
           </div>
         </div>
 
-        <div class="conn-error" id="chat-error" hidden>
+        <div class="conn-error" id="chat-error" role="alert" aria-labelledby="chat-error-title" hidden>
           <div class="conn-error-inner">
             <span class="conn-ico" data-icon="lock"></span>
             <h2 id="chat-error-title">Could not reach the agent</h2>
@@ -328,12 +339,12 @@
     </div>
 
     <div class="wb-tabs" role="tablist">
-      <button class="wb-tab" role="tab" data-tab="artifact" id="tab-artifact" aria-selected="true">Artifact</button>
-      <button class="wb-tab" role="tab" data-tab="chart" id="tab-chart" aria-selected="false">Charts</button>
-      <button class="wb-tab" role="tab" data-tab="files" id="tab-files" aria-selected="false">
+      <button class="wb-tab" role="tab" data-tab="artifact" id="tab-artifact" aria-controls="panel-artifact" aria-selected="true">Artifact</button>
+      <button class="wb-tab" role="tab" data-tab="chart" id="tab-chart" aria-controls="panel-chart" aria-selected="false">Charts</button>
+      <button class="wb-tab" role="tab" data-tab="files" id="tab-files" aria-controls="panel-files" aria-selected="false">
         Files <span class="badge" hidden>0</span>
       </button>
-      <button class="wb-tab" role="tab" data-tab="activity" id="tab-activity" aria-selected="false">
+      <button class="wb-tab" role="tab" data-tab="activity" id="tab-activity" aria-controls="panel-activity" aria-selected="false">
         Activity <span class="badge" hidden>0</span>
       </button>
     </div>
@@ -341,7 +352,7 @@
     <div class="wb-panels">
 
       <!-- ---------- Artifact ---------- -->
-      <section class="wb-panel active" data-panel="artifact" role="tabpanel">
+      <section class="wb-panel active" data-panel="artifact" id="panel-artifact" role="tabpanel" aria-labelledby="tab-artifact" tabindex="0">
         <div class="notice">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7" fill="none"/><path d="M12 11v5M12 8h.01" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
           <span>Press <strong>Send to workbench</strong> under any reply, or paste text here. BIG A renders it properly and lets you export it as a document.</span>
@@ -392,7 +403,7 @@
       </section>
 
       <!-- ---------- Charts ---------- -->
-      <section class="wb-panel" data-panel="chart" role="tabpanel">
+      <section class="wb-panel" data-panel="chart" id="panel-chart" role="tabpanel" aria-labelledby="tab-chart" tabindex="0">
         <div class="notice">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7" fill="none"/><path d="M12 11v5M12 8h.01" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
           <span>Ask the agent for figures as CSV or JSON, paste them here, and BIG A will draw the chart. Everything renders on your machine.</span>
@@ -444,7 +455,7 @@
       </section>
 
       <!-- ---------- Files ---------- -->
-      <section class="wb-panel" data-panel="files" role="tabpanel">
+      <section class="wb-panel" data-panel="files" id="panel-files" role="tabpanel" aria-labelledby="tab-files" tabindex="0">
         <div class="notice">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7" fill="none"/><path d="M12 11v5M12 8h.01" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
           <span>Drop files here to pull their text out, then press <strong>To chat</strong> to stage them on the composer. You can also drop files straight onto the conversation.</span>
@@ -466,7 +477,7 @@
       </section>
 
       <!-- ---------- Activity ---------- -->
-      <section class="wb-panel" data-panel="activity" role="tabpanel">
+      <section class="wb-panel" data-panel="activity" id="panel-activity" role="tabpanel" aria-labelledby="tab-activity" tabindex="0">
         <div class="notice">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7" fill="none"/><path d="M12 11v5M12 8h.01" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
           <span>A live trace of what this workspace does: sessions, renders, chart builds, downloads. It cannot see inside the agent's own conversation.</span>
@@ -703,7 +714,7 @@
           <div class="field">
             <label for="conn-env-id">Environment ID <span class="req">required</span></label>
             <input type="text" id="conn-env-id" spellcheck="false"
-                   placeholder="00000000-0000-0000-0000-000000000000">
+                   placeholder="GUID or Default-00000000-0000-0000-0000-000000000000">
           </div>
           <div class="field">
             <label for="conn-schema">Agent schema name <span class="req">required</span></label>
@@ -712,10 +723,10 @@
         </div>
         <p class="hint">
           If entering values by hand, use the schema name from
-          <strong>Settings</strong> &rsaquo; <strong>Advanced</strong> &rsaquo; <strong>Metadata</strong>.
-          If the environment value starts with <code>Default-</code>, it is an environment
-          name containing the tenant ID, not the Environment ID. Get the Environment ID from
-          Power Platform admin center &rsaquo; Manage &rsaquo; Environments &rsaquo; Details.
+          <strong>Settings</strong> &rsaquo; <strong>Advanced</strong> &rsaquo; <strong>Metadata</strong>
+          and copy <strong>Environment ID</strong> from Power Apps &rsaquo; Settings &rsaquo;
+          <strong>Developer resources</strong>. For the default environment, preserve the complete
+          <code>Default-&hellip;</code> value; the prefix is required.
         </p>
         <p class="hint conn-target-line" id="conn-resolved"></p>
       </section>
@@ -806,29 +817,24 @@
           <strong>Token Endpoint</strong> on its Channels page. An embed working does not prove
           that anonymous Direct Line is available.</p>
 
-        <!-- Shown by app.js only when the agent sits in the DEFAULT environment,
-             where the URL carries the tenant ID instead of the environment ID and
-             so the address genuinely cannot be worked out. -->
+        <!-- Shown by app.js when the agent sits in the default environment. -->
         <div class="conn-callout warn" id="conn-legacy-envid" hidden>
-          <strong>This agent needs one box filled in.</strong>
-          <p>Its URL says <code>Default-&hellip;</code>, which is the environment&rsquo;s
-            <em>name</em>, not its ID, so the address cannot be worked out from the URL alone.</p>
-          <p><strong>Copilot Studio shows the wrong value here.</strong> Its Session details
-            panel prints <code>Environment ID: Default-&hellip;</code>, which is the name again.
-            The real ID is a plain GUID with no prefix, and only the admin centre shows it:
-            <a href="https://admin.powerplatform.microsoft.com" target="_blank"
-               rel="noopener">admin.powerplatform.microsoft.com</a> &rsaquo;
-            <strong>Manage</strong> &rsaquo; <strong>Environments</strong> &rsaquo; your
-            environment &rsaquo; <strong>Details</strong>.</p>
+          <strong>This agent uses the default environment.</strong>
+          <p>Its official Environment ID starts with <code>Default-&hellip;</code>. Preserve the
+            complete value because the prefix forms part of the Power Platform API hostname.</p>
+          <p>Copy it from
+            <a href="https://make.powerapps.com" target="_blank"
+              rel="noopener">make.powerapps.com</a> &rsaquo;
+            <strong>Settings</strong> &rsaquo; <strong>Developer resources</strong> &rsaquo;
+            <strong>Environment ID</strong>.</p>
           <div class="field">
             <label for="conn-legacy-env-id">Environment ID</label>
             <input type="text" id="conn-legacy-env-id" spellcheck="false"
-                   placeholder="00000000-0000-0000-0000-000000000000">
+                   placeholder="Default-00000000-0000-0000-0000-000000000000">
             <p class="hint" id="conn-legacy-env-warn" hidden></p>
-            <p class="hint">You can paste the bare GUID, a whole <strong>Agents SDK connection
-              string</strong>, or a token endpoint URL. The ID will be taken out of whichever
-              you give it. Do not paste the GUID from the agent&rsquo;s own URL: that one is
-              your <em>tenant</em> ID and will not work.</p>
+            <p class="hint">You can paste the Environment ID, a whole <strong>Agents SDK
+              connection string</strong>, or a token endpoint URL. The ID will be taken out of
+              whichever you provide. Do not remove the <code>Default-</code> prefix.</p>
           </div>
         </div>
 

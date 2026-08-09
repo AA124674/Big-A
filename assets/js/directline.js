@@ -72,23 +72,18 @@
 
     var envIds = [];
 
-    // An explicitly supplied environment ID always wins. This is not a nicety:
-    // for the DEFAULT environment the URL reads "Default-{tenantId}", and the
-    // tenant ID is NOT the environment ID. Stripping the prefix therefore
-    // yields a GUID of the right shape that maps to a host which simply does
-    // not exist, so the request fails with no useful explanation. The only
-    // reliable source is Copilot Studio, Settings > Advanced > Metadata.
+    // An explicitly supplied environment ID always wins. For the default
+    // environment, Microsoft's official identifier is "Default-{tenantId}".
+    // The complete value, including "Default-", forms the API hostname.
     if (envIdOverride) envIds.push(String(envIdOverride).trim());
 
     envIds.push(envRaw);
-    if (isDefaultAlias(envRaw)) envIds.push(envRaw.replace(/^Default-/i, ""));
 
     envIds.forEach(function (id) {
-      var hex = id.replace(/-/g, "").toLowerCase();
-      // Only a real environment GUID maps to a hostname. Anything else (for
-      // example the literal "Default-" prefix) would produce a host that
-      // cannot resolve, so it is not worth a network round trip.
-      if (!/^[0-9a-f]{32}$/.test(hex)) return;
+      var hex = id.replace(/[^0-9a-z]/gi, "").toLowerCase();
+      // Standard IDs normalize to 32 hexadecimal characters. Default IDs
+      // normalize to "default" followed by those 32 characters.
+      if (!/^(?:[0-9a-f]{32}|default[0-9a-f]{32})$/.test(hex)) return;
       var prefix = hex.slice(0, hex.length - 2);
       var suffix = hex.slice(-2);
       var host = "https://" + prefix + "." + suffix + ".environment.api.powerplatform.com";
@@ -210,19 +205,19 @@
     // Said up front, because it is the single most common reason discovery
     // fails and it is invisible from the error the network returns.
     var defaultEnvHint = !envId && isDefaultAlias(environmentSegment(embedUrl))
-      ? " This agent is in the DEFAULT environment, whose URL shows \u201CDefault-\u201D followed by " +
-        "your tenant ID rather than the environment ID, so the address cannot be worked out from " +
-        "the URL alone. Paste the Environment ID from Copilot Studio: Settings \u203A Advanced \u203A " +
-        "Metadata."
-      // An environment ID WAS given and nothing answered. Either the ID is
-      // wrong (very easy: the GUID in the agent's URL is the tenant, not the
-      // environment) or this agent has no anonymous Direct Line channel.
+      ? " This agent is in the default environment. BIG A used the complete Default-\u2026 " +
+        "identifier shown by Power Apps Developer resources. Because no endpoint answered, " +
+        "the agent most likely has no anonymous Direct Line channel; use Agents SDK mode."
+      // An environment ID WAS given and nothing answered. At this point the
+      // most likely explanation is no longer a wrong ID: it is that this agent
+      // has no anonymous Direct Line channel at all.
       : envId
-        ? " An Environment ID was supplied, so either it is not the right one, or this agent " +
-          "does not expose an anonymous Direct Line channel. Check the ID against Copilot Studio: " +
-          "Settings \u203A Advanced \u203A Metadata, making sure it is not the tenant ID from the " +
-          "agent's own URL. If it is correct, paste the Token Endpoint from Settings \u203A " +
-          "Channels \u203A Mobile app, or switch this agent to the Agents SDK mode."
+        ? " An Environment ID was supplied and still nothing answered, so this agent most " +
+          "likely has no anonymous Direct Line channel. Newer Copilot Studio agents are " +
+          "published for the Microsoft 365 Agents SDK instead, and no longer expose a token " +
+          "endpoint. Switch this agent to the Agents SDK mode, which is the supported route. " +
+          "If Settings \u203A Channels does still offer a Token Endpoint for this agent, " +
+          "pasting it into the optional box below will also work."
         : "";
 
     var best = null;

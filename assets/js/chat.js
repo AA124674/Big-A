@@ -118,7 +118,20 @@
 
   /** Resolve an attachment to something the browser can display. */
   function attachmentUrl(att) {
-    if (att.url) return Promise.resolve(att.url);
+    if (att.url) {
+      try {
+        var protocol = new URL(String(att.url), location.href).protocol.toLowerCase();
+        // Plain http is accepted only when the page itself is http, i.e. local
+        // development. On the deployed https site it is mixed content the
+        // browser would block anyway, so refusing it here gives the user the
+        // honest "cannot be previewed" message instead of a silent failure.
+        var httpOk = protocol === "http:" && location.protocol === "http:";
+        if (protocol === "https:" || protocol === "blob:" || httpOk) {
+          return Promise.resolve(att.url);
+        }
+      } catch (e) { /* unsafe or malformed agent URL */ }
+      return Promise.resolve(null);
+    }
     if (att.blobId) {
       return Store.blobs.url(att.blobId).then(function (u) {
         if (u && u.indexOf("blob:") === 0) objectUrls.push(u);
@@ -168,6 +181,7 @@
         var frame = document.createElement("iframe");
         frame.className = "preview-frame";
         frame.title = att.name || "PDF preview";
+        frame.setAttribute("sandbox", "allow-downloads");
         frame.src = url;
         body.appendChild(frame);
         return;
@@ -236,14 +250,10 @@
       img.alt = att.name || "Attached image";
       img.loading = "lazy";
       wrap.appendChild(img);
-      if (att.url) img.src = att.url;
-      else if (att.blobId) {
-        Store.blobs.url(att.blobId).then(function (u) {
-          if (!u) { wrap.classList.add("att-missing"); return; }
-          if (u.indexOf("blob:") === 0) objectUrls.push(u);
-          img.src = u;
-        });
-      }
+      attachmentUrl(att).then(function (u) {
+        if (!u) { wrap.classList.add("att-missing"); return; }
+        img.src = u;
+      });
       var cap = document.createElement("span");
       cap.className = "att-cap";
       cap.textContent = att.name || "image";
@@ -379,12 +389,13 @@
     var ol = document.createElement("ol");
     list.forEach(function (c) {
       var li = document.createElement("li");
-      if (c.url) {
+      var safeUrl = c.url && Artifacts.safeUrl(c.url, false);
+      if (safeUrl) {
         var a = document.createElement("a");
-        a.href = c.url;
+        a.href = safeUrl;
         a.target = "_blank";
         a.rel = "noopener noreferrer";
-        a.textContent = c.title || c.url;
+        a.textContent = c.title || safeUrl;
         li.appendChild(a);
       } else {
         li.textContent = c.title || "Source";
@@ -669,15 +680,24 @@
       : null;
   }
 
+  function streamInfoEntity(act) {
+    var entities = act && Array.isArray(act.entities) ? act.entities : [];
+    return entities.filter(function (e) {
+      return e && String(e.type || "").toLowerCase() === "streaminfo";
+    })[0] || {};
+  }
+
   /** Which streamed reply an activity belongs to. */
   function streamKey(act) {
     var cd = act.channelData || {};
-    return cd.streamId || (act.replyToId ? "reply:" + act.replyToId : null) || act.id || null;
+    var info = streamInfoEntity(act);
+    return info.streamId || cd.streamId || (act.replyToId ? "reply:" + act.replyToId : null) || act.id || null;
   }
 
   function streamType(act) {
     var cd = act.channelData || {};
-    var t = (cd.streamType || "").toLowerCase();
+    var info = streamInfoEntity(act);
+    var t = (info.streamType || cd.streamType || "").toLowerCase();
     if (t) return t;
     if (act.type === "typing" && act.text) return "streaming";
     if (act.type === "message") return "final";
@@ -878,7 +898,7 @@
       saveResumePoint();
       // Only trigger the greeting on a genuinely new conversation, so
       // resuming does not replay it.
-      if (!c.resumed && !messages.length && c.sendGreetingTrigger) c.sendGreetingTrigger();
+      if (!c.resumed && !c.greetingSentOnStart && !messages.length && c.sendGreetingTrigger) c.sendGreetingTrigger();
       if (hooks.onConnected) hooks.onConnected(c);
       return c;
     }).catch(function (err) {

@@ -407,13 +407,12 @@
    *
    *   * the IndexedDB database itself, so nothing survives in a store that a
    *     later version of the schema might add back;
-   *   * localStorage, which holds the text fallback AND the Microsoft sign-in
-   *     library's cached accounts and tokens;
-   *   * sessionStorage, which holds in-flight sign-in state;
-   *   * the Cache Storage API, in case the site is ever served by a worker.
+   *   * BIG A's own localStorage fallback and mirrored theme value.
    *
-   * Every step is best effort and independent: a browser that forbids one of
-   * them (private windows commonly do) must not prevent the others.
+   * Microsoft sign-in state is removed by Connect.forget() before this runs.
+   * Storage belonging to other applications on the same origin is deliberately
+   * preserved. Every step is best effort and independent: a browser that
+   * forbids one of them must not prevent the others.
    */
   function destroy() {
     var jobs = [];
@@ -441,15 +440,11 @@
     }));
 
     jobs.push(Promise.resolve().then(function () {
-      try { localStorage.clear(); } catch (e) { noop(); }
-      try { sessionStorage.clear(); } catch (e) { noop(); }
-    }));
-
-    jobs.push(Promise.resolve().then(function () {
-      if (!global.caches || !global.caches.keys) return null;
-      return global.caches.keys()
-        .then(function (keys) { return Promise.all(keys.map(function (k) { return global.caches.delete(k); })); })
-        .catch(noop);
+      try {
+        Object.keys(localStorage).forEach(function (key) {
+          if (key.indexOf(LS_PREFIX) === 0 || key === "biga.theme") localStorage.removeItem(key);
+        });
+      } catch (e) { noop(); }
     }));
 
     return Promise.all(jobs).then(function () { usingFallback = false; });

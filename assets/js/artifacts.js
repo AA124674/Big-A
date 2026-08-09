@@ -61,12 +61,38 @@
 
   /* ------------------------------------------------------------- markdown */
 
+  /**
+   * Validate a URL before putting agent-authored Markdown into href/src.
+   * Escaping HTML is not enough here: `javascript:` contains no HTML-special
+   * characters but executes when clicked. Relative links are safe and useful;
+   * remote links are limited to normal web/mail protocols. Images additionally
+   * allow a small set of base64 data-image formats.
+   */
+  function safeMarkdownUrl(value, image) {
+    var raw = String(value || "").replace(/&amp;/g, "&").trim();
+    if (!raw || /[\u0000-\u001f\u007f]/.test(raw)) return "";
+    if (image && /^data:image\/(?:png|jpe?g|gif|webp|avif);base64,[a-z0-9+/=]+$/i.test(raw)) {
+      return raw;
+    }
+    try {
+      var base = global.location && global.location.href ? global.location.href : "https://example.invalid/";
+      var protocol = new URL(raw, base).protocol.toLowerCase();
+      if (protocol === "http:" || protocol === "https:" || (!image && protocol === "mailto:")) return raw;
+    } catch (e) { /* malformed URLs are rendered as plain text */ }
+    return "";
+  }
+
   function inline(s) {
     var out = esc(s);
     out = out.replace(/`([^`]+)`/g, function (_, c) { return "<code>" + c + "</code>"; });
-    out = out.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, '<img src="$2" alt="$1">');
-    out = out.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g,
-      '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+    out = out.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, function (_, alt, url) {
+      var safe = safeMarkdownUrl(url, true);
+      return safe ? '<img src="' + esc(safe) + '" alt="' + alt + '">' : alt;
+    });
+    out = out.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, function (_, label, url) {
+      var safe = safeMarkdownUrl(url, false);
+      return safe ? '<a href="' + esc(safe) + '" target="_blank" rel="noopener noreferrer">' + label + "</a>" : label;
+    });
     out = out.replace(/\*\*\*([^*]+)\*\*\*/g, "<strong><em>$1</em></strong>");
     out = out.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
     out = out.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
@@ -167,6 +193,41 @@
     }
 
     return html.join("\n");
+  }
+
+  /**
+   * Sanitize an HTML artifact for an in-page preview. The original source can
+   * still be downloaded, but it is never inserted into BIG A's live document.
+   */
+  function sanitizeHTML(raw) {
+    if (!global.DOMParser) return "<pre>" + esc(raw) + "</pre>";
+    var doc = new global.DOMParser().parseFromString(String(raw || ""), "text/html");
+    /* `noscript` is on this list for a mutation-XSS reason rather than an
+       obvious one: DOMParser parses with scripting disabled, so a noscript
+       body is parsed as markup and sanitized, but the result is re-parsed as
+       raw text when it is assigned to innerHTML in a scripting-enabled
+       document, which can resurrect a tag the sanitizer already inspected. */
+    var blocked = "script,noscript,iframe,frame,frameset,object,embed,applet,base,meta,link,style,form,input,button,textarea,select,option,svg,math,template,audio,video,source,track";
+    Array.prototype.slice.call(doc.body.querySelectorAll(blocked)).forEach(function (node) { node.remove(); });
+    Array.prototype.slice.call(doc.body.querySelectorAll("*")).forEach(function (node) {
+      Array.prototype.slice.call(node.attributes).forEach(function (attr) {
+        var name = attr.name.toLowerCase();
+        if (/^on/.test(name) || name === "style" || name === "srcdoc" || name === "formaction" ||
+            name === "xlink:href" || name === "srcset" || name === "ping" || name === "poster" ||
+            name === "background") {
+          node.removeAttribute(attr.name);
+        } else if (name === "href" || name === "src") {
+          var isImage = node.tagName.toLowerCase() === "img" && name === "src";
+          var safe = safeMarkdownUrl(attr.value, isImage);
+          if (safe) node.setAttribute(attr.name, safe); else node.removeAttribute(attr.name);
+        }
+      });
+      if (node.tagName.toLowerCase() === "a" && node.hasAttribute("href")) {
+        node.setAttribute("target", "_blank");
+        node.setAttribute("rel", "noopener noreferrer");
+      }
+    });
+    return doc.body.innerHTML;
   }
 
   /* ------------------------------------------------------------ data parse */
@@ -668,10 +729,11 @@
     el.className = "avatar" + (size ? " avatar-" + size : "");
     el.setAttribute("aria-hidden", "true");
 
-    // A custom image wins when the agent has one; otherwise initials.
-    if (agent && agent.icon) {
+    // A custom image wins when it has a safe source; otherwise initials.
+    var safeIcon = agent && agent.icon && safeMarkdownUrl(agent.icon, true);
+    if (safeIcon) {
       var img = document.createElement("img");
-      img.src = agent.icon;
+      img.src = safeIcon;
       img.alt = "";
       // A broken or blocked image would otherwise leave a torn-page glyph.
       img.addEventListener("error", function () {
@@ -700,7 +762,9 @@
     initials: initials,
     extractUrl: extractUrl,
     stamp: stamp,
+    safeUrl: safeMarkdownUrl,
     markdown: markdown,
+    sanitizeHTML: sanitizeHTML,
     highlight: highlight,
     parseDataset: parseDataset,
     parseDelimited: parseDelimited,

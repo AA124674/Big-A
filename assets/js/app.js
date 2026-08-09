@@ -101,14 +101,10 @@
     // switches above because it is a number, not a toggle.
     embedCrop: 60,
     connection: {
-      // Default transport: Direct Line, drawn in our own canvas.
-      //
-      // This is the mode that needs no Azure app registration, no admin
-      // consent and no third-party script, while still giving copyable,
-      // saveable, themed messages. The Agents SDK is strictly better only
-      // for agents that require users to authenticate, which is a minority
-      // and cannot be made to work without IT involvement anyway.
-      mode: "directline",
+      // Default transport: authenticated Direct-to-Engine. New Copilot Studio
+      // agents expose an Agents SDK connection string rather than an anonymous
+      // Direct Line token endpoint.
+      mode: "m365",
       connectionString: "",
       environmentId: "",
       schemaName: "",
@@ -186,7 +182,7 @@
         });
       }
       if (["iframe", "m365", "directline", "sso"].indexOf(state.connection.mode) === -1) {
-        state.connection.mode = "directline";
+        state.connection.mode = "m365";
       }
 
       migrateConnection();
@@ -219,7 +215,14 @@
       }
     }
 
-    if (!c.scope && global.Connect) c.scope = global.Connect.DEFAULT_AGENT_SCOPE;
+  }
+
+  function tokenScope(settings) {
+    if (settings && settings.scope) return settings.scope;
+    if (global.M365Agents && global.M365Agents.scopeForCloud) {
+      return global.M365Agents.scopeForCloud(settings && settings.cloud);
+    }
+    return global.Connect ? global.Connect.DEFAULT_AGENT_SCOPE : "";
   }
 
   function uid() { return Store.uid(); }
@@ -560,14 +563,14 @@
     }).catch(function (err) {
       setStatus("offline", err && err.message);
       logEvent("Connection failed", err && err.message, "err");
-      // The native canvas is the default, so its failure must not be a dead
-      // end. Fall back to the frame, which needs nothing but the agent URL.
+      // A failed legacy Direct Line connection must not be a dead end.
+      // Fall back to the frame, which needs nothing but the agent URL.
       if (conn.mode === "directline") return fallBackToFrame(agent, err);
     });
   }
 
   /**
-   * Last resort for the default transport.
+   * Last resort for the legacy Direct Line transport.
    *
    * The native canvas needs the agent to be published with security set to
    * "No authentication". When it is not, or the school network blocks the
@@ -638,7 +641,7 @@
       return global.Connect.acquireToken({
         clientId: settings.clientId,
         tenantId: settings.tenantId,
-        scopes: [settings.scope || global.Connect.DEFAULT_AGENT_SCOPE],
+        scopes: [tokenScope(settings)],
         forceRefresh: !!opts.forceRefresh,
         silentOnly: !!opts.silentOnly
       }).then(function (res) {
@@ -1015,8 +1018,10 @@
     view.className = "artifact-view md";
     if (type === "markdown") {
       view.innerHTML = A.markdown(src);
-    } else if (type === "html") {
-      view.innerHTML = src;
+    } else     if (type === "html") {
+      // HTML artifacts may come from an agent. Never execute that source in
+      // BIG A's origin because MSAL tokens and saved chats live here.
+      view.innerHTML = Artifacts.sanitizeHTML(src);
     } else if (type === "code") {
       view.innerHTML = "<pre><code>" + A.highlight(src) + "</code></pre>";
     } else if (type === "table") {
@@ -1495,21 +1500,17 @@
   /* --------------------------------------------------- connection & sign-in */
 
   var MODE_HINTS = {
-    directline: "Recommended, and the default. Speaks to the agent over Direct Line and draws every " +
-                "message in this page, so replies can be copied, chats are saved to this browser, " +
-                "files can be dropped in, and the canvas matches the rest of the app. Nothing to " +
-                "register and no sign-in: it works with any published agent whose security is set to " +
-                "\u201cNo authentication\u201d, which is the same agent that the embed code works for. " +
-                "The address is worked out from the agent's URL.",
-    iframe: "Fallback. Loads Copilot Studio's own chat canvas inside a frame. Nothing to register, but " +
-            "the frame belongs to Microsoft's site, so its appearance cannot be changed, its messages " +
-            "cannot be copied or saved here, and files cannot be dropped into it. Use this only if the " +
-            "canvas above will not connect.",
-    m365: "For agents that require users to sign in. Uses the Microsoft 365 Agents SDK protocol and " +
-          "gives the same full canvas as the recommended mode. Needs an Entra ID app registration in " +
-          "Azure, so only choose it if your agent's security is set to authenticate users.",
-    sso: "The recommended canvas, plus single sign-on: you sign in with Microsoft up front and BIG A " +
-         "answers the agent's sign-in card for you. Needs an Entra ID app registration."
+    directline: "Legacy option for older anonymous agents. It keeps the full BIG A canvas, but it only " +
+                "works when Copilot Studio shows a Token Endpoint for the agent. If there is no Token " +
+                "Endpoint, use the Microsoft 365 Agents SDK mode instead.",
+    iframe: "Loads Copilot Studio's own chat canvas inside a frame. Nothing to register, but the frame " +
+            "belongs to Microsoft's site, so its appearance cannot be changed, its messages cannot be " +
+            "copied or saved here, and files cannot be dropped into it.",
+    m365: "Recommended and the default. Uses the Microsoft 365 Agents SDK Direct-to-Engine protocol and " +
+          "the full BIG A canvas. It requires an Entra ID single-page application, delegated " +
+          "CopilotStudio.Copilots.Invoke permission, admin consent, and user sign-in.",
+    sso: "Legacy Direct Line with single sign-on. Use it only for an older agent whose Channels page " +
+         "still exposes a Token Endpoint."
   };
 
   /** The agent the connection modal is currently editing, or null for global. */
@@ -1616,39 +1617,81 @@
   }
 
   var GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  var DEFAULT_ENV_RE = /^Default-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  var GUID_ANYWHERE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/ig;
+
+  /** Read the tenant ID embedded in a default-environment route. */
+  function tenantIdFromAgent() {
+    var a = currentAgent();
+    var dl = global.DirectLine;
+    if (!a || !a.url || !dl || !dl.environmentSegment) return "";
+    var seg = dl.environmentSegment(a.url);
+    return dl.isDefaultAlias(seg) ? seg.replace(/^Default-/i, "").toLowerCase() : "";
+  }
+
+  /**
+   * Pull a usable environment identifier out of whatever was pasted.
+   *
+   * Standard environments use a GUID. The tenant's default environment uses
+   * the official "Default-{tenantId}" identifier; the entire value, including
+   * "Default-", is required when deriving its environment API hostname.
+   */
+  function extractEnvId(raw) {
+    var s = String(raw || "").trim();
+    if (!s) return "";
+    if (GUID_RE.test(s) || DEFAULT_ENV_RE.test(s)) return s.toLowerCase();
+
+    // A connection string carries it in a named field, so prefer that reading.
+    if (global.M365Agents && global.M365Agents.parseConnection) {
+      try {
+        var parsed = global.M365Agents.parseConnection(s);
+        if (parsed && (GUID_RE.test(parsed.environmentId || "") ||
+            DEFAULT_ENV_RE.test(parsed.environmentId || ""))) {
+          return parsed.environmentId.toLowerCase();
+        }
+      } catch (e) { /* fall through to the scan below */ }
+    }
+
+    // A token endpoint URL hides it as an undotted 32-char hex host label.
+    var host = s.match(/([0-9a-f]{30})\.([0-9a-f]{2})\.environment\.api/i);
+    if (host) {
+      var hex = (host[1] + host[2]).toLowerCase();
+      return hex.replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, "$1-$2-$3-$4-$5");
+    }
+
+    // Last resort: any GUID in the text that is not the tenant ID.
+    var tenant = tenantIdFromAgent();
+    var found = s.match(GUID_ANYWHERE) || [];
+    for (var i = 0; i < found.length; i++) {
+      if (found[i].toLowerCase() !== tenant) return found[i].toLowerCase();
+    }
+    return "";
+  }
 
   /**
    * Returns a plain-English complaint about an environment ID, or "" if it
    * looks usable.
    *
-   * The second check is the important one. The agent URL of a default
-   * environment reads "Default-{tenantId}", and it is entirely natural to
-   * assume the GUID after the prefix IS the environment ID. It is not, and
-   * pasting it back in produces a hostname that does not resolve, so the only
-   * feedback is "unreachable" with nothing to suggest what went wrong.
+   * Accept both standard GUID identifiers and Microsoft's official
+   * Default-{tenantId} identifier for the tenant's default environment.
    */
   function describeEnvIdProblem(raw) {
-    var id = String(raw || "").trim();
-    if (!id) return "";
-    if (/^Default-/i.test(id)) {
-      return "That is the environment's alias, not its ID. Open Copilot Studio " +
-        "\u203A Settings \u203A Advanced \u203A Metadata and copy the Environment ID.";
+    var s = String(raw || "").trim();
+    if (!s) return "";
+
+    var id = extractEnvId(s);
+    var tenant = tenantIdFromAgent();
+
+    if (!id) {
+      return "No environment ID found in that. Paste Environment ID from Power Apps \u203A " +
+        "Settings \u203A Developer resources, or paste the whole Agents SDK connection string.";
     }
-    if (!GUID_RE.test(id)) {
-      return "An environment ID is a GUID, like 00000000-0000-0000-0000-000000000000. " +
-        "Copy it from Copilot Studio \u203A Settings \u203A Advanced \u203A Metadata.";
+
+    if (tenant && id === tenant) {
+      return "That is the bare tenant ID. For the default environment, paste the complete " +
+        "Environment ID shown by Developer resources, including the \u201CDefault-\u201D prefix.";
     }
-    var a = currentAgent();
-    var dl = global.DirectLine;
-    if (a && a.url && dl && dl.environmentSegment) {
-      var seg = dl.environmentSegment(a.url);
-      if (dl.isDefaultAlias(seg) &&
-          seg.replace(/^Default-/i, "").toLowerCase() === id.toLowerCase()) {
-        return "That GUID is your tenant ID, taken from the agent's URL. The environment " +
-          "ID is a different value: open Copilot Studio \u203A Settings \u203A Advanced " +
-          "\u203A Metadata and copy the Environment ID from there.";
-      }
-    }
+
     return "";
   }
 
@@ -1657,8 +1700,12 @@
       connectionString: $("#conn-string").value.trim(),
       directConnectUrl: $("#conn-direct-url").value.trim(),
       // Two boxes, one setting. The SDK step and the native step both need the
-      // environment ID, and nobody should have to type it twice.
-      environmentId: $("#conn-env-id").value.trim() || $("#conn-legacy-env-id").value.trim(),
+      // environment ID, and nobody should have to type it twice. Both are run
+      // through extractEnvId so a pasted connection string or endpoint URL
+      // works as well as a bare GUID.
+      environmentId: extractEnvId($("#conn-env-id").value) ||
+        extractEnvId($("#conn-legacy-env-id").value) ||
+        $("#conn-env-id").value.trim(),
       schemaName: $("#conn-schema").value.trim(),
       cloud: $("#conn-cloud").value,
       agentType: $("#conn-agent-type").value,
@@ -1766,7 +1813,7 @@
     $("#conn-token-endpoint").value = c.tokenEndpoint || "";
     $("#conn-client-id").value = c.clientId || "";
     $("#conn-tenant-id").value = c.tenantId || "";
-    $("#conn-scope").value = c.scope || (global.Connect ? global.Connect.DEFAULT_AGENT_SCOPE : "");
+    $("#conn-scope").value = c.scope || "";
     var redirect = location.origin + location.pathname;
     $("#conn-redirect").textContent = redirect;
     $("#conn-redirect-legacy").textContent = redirect;
@@ -1784,7 +1831,7 @@
     var was = btn.textContent;
     btn.textContent = "Signing in…";
 
-    var scopes = [s.scope || global.Connect.DEFAULT_AGENT_SCOPE];
+    var scopes = [tokenScope(s)];
     var cfg = { clientId: s.clientId, tenantId: s.tenantId, scopes: scopes };
 
     var p = useRedirect
@@ -1821,7 +1868,7 @@
       return global.Connect.acquireToken({
         clientId: s.clientId,
         tenantId: s.tenantId,
-        scopes: [s.scope || global.Connect.DEFAULT_AGENT_SCOPE],
+        scopes: [tokenScope(s)],
         forceRefresh: !!o.forceRefresh
       }).then(function (r) { return r.accessToken; });
     };
@@ -1963,10 +2010,10 @@
         return;
       }
     }
-    // The native transport deliberately has NO required fields: the address is
-    // discovered from the agent's URL. It used to demand a token endpoint here,
-    // which silently blocked saving anything else on this panel, including the
-    // environment ID that default-environment agents cannot work without.
+    if ((mode === "directline" || mode === "sso") && !endpoint) {
+      toast("Legacy Direct Line requires the Token Endpoint shown on the agent's Channels page.", "err");
+      return;
+    }
     if (mode === "directline" && form.environmentId) {
       var envProblem = describeEnvIdProblem(form.environmentId);
       if (envProblem) {

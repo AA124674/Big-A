@@ -29,26 +29,30 @@
 (function (global) {
   "use strict";
 
-  /* Each library is listed with fallbacks. Microsoft's own CDNs are tried
-     first, but alcdn.msauth.net in particular is blocked by a fair number of
-     school and corporate web filters, which are less likely to have heard of
-     the public package mirrors. The libraries are byte-identical either way:
-     the mirrors serve the same published npm artefact. */
+  /* Each library is listed with a same-origin option and pinned CDN fallbacks.
+     Some school and corporate web filters block one or more public CDNs, so a
+     local vendor file remains the most reliable production option. */
   var WEBCHAT_CDN = [
     "assets/vendor/webchat.js",
-    "https://cdn.botframework.com/botframework-webchat/latest/webchat.js",
-    "https://unpkg.com/botframework-webchat@latest/dist/webchat.js"
+    "https://cdn.botframework.com/botframework-webchat/4.19.1/webchat.js",
+    "https://unpkg.com/botframework-webchat@4.19.1/dist/webchat.js"
   ];
-  var MSAL_VERSION = "2.38.3";
+  // MSAL v3+ is no longer on Microsoft's CDN. Keep an exact npm version so
+  // executable code never changes behind a `latest` URL.
+  var MSAL_VERSION = "5.18.0";
 
   /* A self-hosted copy is tried before any CDN. It is not shipped, because the
      licence is Microsoft's to redistribute and the file would go stale; but if
      a network filter blocks every CDN, dropping the file at this path is the
      one fix that cannot be blocked, since it is same-origin. When it is absent
-     the 404 is immediate and the CDNs are used as normal. */
+     the 404 is immediate and the CDNs are used as normal.
+
+     alcdn.msauth.net is deliberately absent: Microsoft stopped publishing
+     msal-browser there at v3, so it cannot serve 5.18.0, and it is not in the
+     page's script-src, so attempting it logged a CSP violation on every
+     sign-in. */
   var MSAL_CDN = [
     "assets/vendor/msal-browser.min.js",
-    "https://alcdn.msauth.net/browser/" + MSAL_VERSION + "/js/msal-browser.min.js",
     "https://cdn.jsdelivr.net/npm/@azure/msal-browser@" + MSAL_VERSION + "/lib/msal-browser.min.js",
     "https://unpkg.com/@azure/msal-browser@" + MSAL_VERSION + "/lib/msal-browser.min.js"
   ];
@@ -138,9 +142,8 @@
   function diagnose() {
     var targets = [
       { label: "Self-hosted copy", url: MSAL_CDN[0], optional: true },
-      { label: "Microsoft CDN", url: MSAL_CDN[1] },
-      { label: "jsDelivr mirror", url: MSAL_CDN[2] },
-      { label: "unpkg mirror", url: MSAL_CDN[3] },
+      { label: "jsDelivr mirror", url: MSAL_CDN[1] },
+      { label: "unpkg mirror", url: MSAL_CDN[2] },
       { label: "Microsoft sign-in", url: "https://login.microsoftonline.com/common/discovery/keys" }
     ];
 
@@ -182,9 +185,9 @@
     }
     if (!usable.length) {
       return "Every source for the sign-in library is blocked, though Microsoft itself is " +
-             "reachable. Ask for alcdn.msauth.net to be allowed, or place a copy of " +
-             "msal-browser.min.js at assets/vendor/ in the repository, which cannot be blocked " +
-             "because it is served from this same site.";
+             "reachable. Ask for cdn.jsdelivr.net or unpkg.com to be allowed, or place a copy " +
+             "of msal-browser.min.js at assets/vendor/ in the repository, which cannot be " +
+             "blocked because it is served from this same site.";
     }
     return "The sign-in library can be loaded, but login.microsoftonline.com is not reachable. " +
            "Sign-in cannot work until that domain is allowed.";
@@ -307,7 +310,9 @@
           redirectUri: redirect,
           navigateToLoginRequestUrl: true
         },
-        cache: { cacheLocation: "localStorage", storeAuthStateInCookie: false },
+        // Limit token lifetime on shared or school-managed computers. A new tab
+        // may require sign-in again, but closing the tab removes the token cache.
+        cache: { cacheLocation: "sessionStorage", storeAuthStateInCookie: false },
         system: { allowNativeBroker: false }
       });
       msalKey = key;
