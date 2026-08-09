@@ -98,6 +98,180 @@
   --shadow-lg: 0 18px 48px rgba(0,0,0,.6);
 }
 
+/* ==========================================================================
+   Colourways
+   --------------------------------------------------------------------------
+   A colourway is a SECOND axis, carried on <html data-palette="...">, layered
+   over the existing light/dark axis on data-theme. Every colourway therefore
+   has to define both halves, which is why each one appears twice below.
+
+   The light half is written as :not([data-theme="dark"]) rather than
+   [data-theme="light"] so that it still applies during the very first paint,
+   before app.js has had a chance to set data-theme at all. The dark half is
+   written with both attributes so it out-specifies the light half regardless
+   of source order.
+
+   Only the surface, line and accent ramps are re-stated. Ink, shape, shadow
+   and the support colours are inherited from the blocks above, so a colourway
+   can never accidentally break contrast or the error/warning semantics.
+   ========================================================================== */
+
+/* ---------- Pastel blue ---------- */
+
+:root[data-palette="blue"]:not([data-theme="dark"]) {
+  --paper:        #ECF1F8;
+  --surface:      #FFFFFF;
+  --surface-sunk: #F1F5FB;
+  --sidebar:      #E5EDF7;
+  --overlay:      rgba(18, 27, 40, 0.45);
+
+  --ink:          #131A24;
+  --ink-soft:     #33404F;
+  --ink-muted:    #6A788A;
+  --ink-faint:    #9AA6B5;
+
+  --line:         #D6E1EF;
+  --line-strong:  #BECEE3;
+
+  --clay:         #3E7FC1;
+  --clay-hover:   #336BA6;
+  --clay-wash:    #DEEAF8;
+  --clay-ink:     #245380;
+}
+
+:root[data-theme="dark"][data-palette="blue"] {
+  --paper:        #1C2430;
+  --surface:      #24303F;
+  --surface-sunk: #1F2937;
+  --sidebar:      #161D27;
+  --overlay:      rgba(0, 0, 0, .62);
+
+  --line:         #35455A;
+  --line-strong:  #48596F;
+
+  --clay:         #6FA8DF;
+  --clay-hover:   #8ABCEC;
+  --clay-wash:    #22323F;
+  --clay-ink:     #A9CDF0;
+}
+
+/* ---------- Grey ---------- */
+
+:root[data-palette="grey"]:not([data-theme="dark"]) {
+  --paper:        #EFEFEF;
+  --surface:      #FFFFFF;
+  --surface-sunk: #F4F4F4;
+  --sidebar:      #E8E8E8;
+  --overlay:      rgba(24, 24, 24, 0.45);
+
+  --ink:          #141414;
+  --ink-soft:     #3B3B3B;
+  --ink-muted:    #6E6E6E;
+  --ink-faint:    #9C9C9C;
+
+  --line:         #DCDCDC;
+  --line-strong:  #C4C4C4;
+
+  --clay:         #4E5257;
+  --clay-hover:   #383C40;
+  --clay-wash:    #E4E5E7;
+  --clay-ink:     #33373B;
+}
+
+:root[data-theme="dark"][data-palette="grey"] {
+  --paper:        #232323;
+  --surface:      #2D2D2D;
+  --surface-sunk: #272727;
+  --sidebar:      #1B1B1B;
+  --overlay:      rgba(0, 0, 0, .62);
+
+  --line:         #3C3C3C;
+  --line-strong:  #4F4F4F;
+
+  --clay:         #B9BEC4;
+  --clay-hover:   #D2D6DB;
+  --clay-wash:    #33373B;
+  --clay-ink:     #DDE1E5;
+}
+
+/* ---------- Pinkish purple (orchid) ---------- */
+
+:root[data-palette="orchid"]:not([data-theme="dark"]) {
+  --paper:        #F5EDF6;
+  --surface:      #FFFFFF;
+  --surface-sunk: #F8F1F9;
+  --sidebar:      #F0E4F2;
+  --overlay:      rgba(34, 20, 38, 0.45);
+
+  --ink:          #1D1420;
+  --ink-soft:     #423349;
+  --ink-muted:    #776A80;
+  --ink-faint:    #A79BAE;
+
+  --line:         #E6D6EA;
+  --line-strong:  #D3BEDA;
+
+  --clay:         #A9539B;
+  --clay-hover:   #8F4384;
+  --clay-wash:    #F3E1F1;
+  --clay-ink:     #74306A;
+}
+
+:root[data-theme="dark"][data-palette="orchid"] {
+  --paper:        #271F2B;
+  --surface:      #322938;
+  --surface-sunk: #2C2431;
+  --sidebar:      #1E1821;
+  --overlay:      rgba(0, 0, 0, .62);
+
+  --line:         #453A4C;
+  --line-strong:  #594C61;
+
+  --clay:         #D18BC6;
+  --clay-hover:   #E0A5D6;
+  --clay-wash:    #3A2C3D;
+  --clay-ink:     #E9BFE2;
+}
+
+/* ---------- Forest (the fourth colourway) ---------- */
+
+:root[data-palette="forest"]:not([data-theme="dark"]) {
+  --paper:        #EDF2EC;
+  --surface:      #FFFFFF;
+  --surface-sunk: #F2F6F1;
+  --sidebar:      #E4EDE3;
+  --overlay:      rgba(18, 28, 20, 0.45);
+
+  --ink:          #131A14;
+  --ink-soft:     #33402F;
+  --ink-muted:    #68786A;
+  --ink-faint:    #99A79A;
+
+  --line:         #D7E3D6;
+  --line-strong:  #BFD1BE;
+
+  --clay:         #3F7D57;
+  --clay-hover:   #336748;
+  --clay-wash:    #DFEDE3;
+  --clay-ink:     #275238;
+}
+
+:root[data-theme="dark"][data-palette="forest"] {
+  --paper:        #1D2620;
+  --surface:      #263127;
+  --surface-sunk: #212B23;
+  --sidebar:      #161D18;
+  --overlay:      rgba(0, 0, 0, .62);
+
+  --line:         #364639;
+  --line-strong:  #495B4C;
+
+  --clay:         #77BE93;
+  --clay-hover:   #93D0AB;
+  --clay-wash:    #23332A;
+  --clay-ink:     #AEDCC0;
+}
+
 /* ---------- Reset ---------- */
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -187,8 +361,17 @@ a:hover { text-decoration: underline; }
   color: var(--ink);
   letter-spacing: -.01em;
   white-space: nowrap;
+  /* It is a <button> now, so the user agent's own padding and centring have
+     to be cleared or the mark shifts a couple of pixels. */
+  padding: 4px 6px;
+  margin-left: -6px;
+  text-align: left;
+  border-radius: var(--r-md);
+  transition: background .15s;
 }
-.brand:hover { text-decoration: none; }
+/* It does something now, so it has to look as though it does. */
+.brand:hover { text-decoration: none; background: var(--line); }
+.brand:active { transform: translateY(1px); }
 .brand-mark {
   width: 26px; height: 26px;
   flex: 0 0 auto;
@@ -2347,3 +2530,165 @@ body.zen .chat-col { height: 100%; }
    avatar sitting low. Centre just that row instead. */
 .msg-head { align-items: center; }
 .msg-head .avatar { margin-right: 1px; }
+
+/* ==========================================================================
+   Slim top bar
+   --------------------------------------------------------------------------
+   A shrink, not a hide. Focus mode already removes the top bar entirely and
+   has to provide a floating chip to get back; this control deliberately stops
+   short of that, keeping the bar (and therefore BOTH toggles) on screen at all
+   times. That is the whole reason it collapses to a strip rather than to
+   nothing: the sidebar toggle lives in this bar, so a bar that could vanish
+   would take the only way back to the sidebar with it.
+   ========================================================================== */
+
+body.topbar-slim { --topbar-h: 34px; }
+
+body.topbar-slim .topbar { gap: 6px; padding: 0 8px; }
+
+/* Everything that is commentary rather than control folds away. The two
+   toggles, the agent switcher and the status pill stay. */
+body.topbar-slim .topbar-note,
+body.topbar-slim #palette-btn,
+body.topbar-slim #wb-btn span,
+body.topbar-slim .topbar-embed-acts .btn { display: none; }
+
+body.topbar-slim .topbar .icon-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--r-sm);
+}
+body.topbar-slim .topbar .icon-btn svg { width: 15px; height: 15px; }
+
+body.topbar-slim .agent-switch { padding: 2px 7px; font-size: 13px; }
+body.topbar-slim .agent-switch .avatar { width: 16px; height: 16px; border-radius: 5px; font-size: 8px; }
+body.topbar-slim .conn-pill { font-size: 11px; padding: 2px 8px; }
+body.topbar-slim #wb-btn { padding: 4px 8px; }
+
+/* The shrink toggle sits immediately beside the sidebar toggle so the two
+   layout controls read as a pair. */
+#topbar-slim-btn svg { transition: transform .18s var(--ease); }
+body.topbar-slim #topbar-slim-btn svg { transform: rotate(180deg); }
+
+/* ==========================================================================
+   Appearance page
+   ========================================================================== */
+
+.appearance-section { margin: 0 0 22px; }
+.appearance-section:last-child { margin-bottom: 0; }
+.appearance-section > h3 {
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin: 0 0 10px;
+}
+
+.palette-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.palette-card {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  width: 100%;
+  padding: 11px;
+  text-align: left;
+  border: 1.5px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  transition: border-color .15s, background .15s, transform .1s;
+}
+.palette-card:hover { border-color: var(--ink-faint); }
+.palette-card:active { transform: translateY(1px); }
+.palette-card[aria-checked="true"] {
+  border-color: var(--clay);
+  background: var(--clay-wash);
+}
+
+.palette-swatch {
+  display: flex;
+  height: 32px;
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  /* The preview shows the colourway's own colours, which are fixed values
+     rather than variables, so it stays truthful whichever theme is active. */
+  color-scheme: light;
+}
+.palette-swatch i { flex: 1 1 0; display: block; }
+
+.palette-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.palette-name svg { width: 14px; height: 14px; color: var(--clay); }
+.palette-card[aria-checked="false"] .palette-name svg { display: none; }
+.palette-desc { font-size: 11.5px; color: var(--ink-muted); line-height: 1.4; }
+
+/* ==========================================================================
+   Agent icon uploader
+   ========================================================================== */
+
+.icon-picker {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.icon-preview {
+  width: 46px;
+  height: 46px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-md);
+  border: 1px dashed var(--line-strong);
+  background: var(--surface-sunk);
+  overflow: hidden;
+}
+.icon-preview .avatar { width: 100%; height: 100%; border-radius: 0; font-size: 15px; }
+.icon-preview img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.icon-picker-acts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+
+/* ==========================================================================
+   Hidden agents
+   ========================================================================== */
+
+/* A hidden agent is still listed while the "show hidden" reveal is on, but it
+   is dimmed so the two states are never confused. */
+.side-item.is-hidden-agent .txt,
+.side-item.is-hidden-agent .avatar { opacity: .48; }
+
+.row-acts .act.on { color: var(--clay); }
+
+.row-acts .act {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+.row-acts .act svg { width: 13px; height: 13px; opacity: 1; }
+.row-acts .act:hover { color: var(--clay); background: var(--surface); }
+
+.agents-hidden-note {
+  font-size: 11.5px;
+  color: var(--ink-muted);
+  padding: 4px 10px 2px;
+  line-height: 1.45;
+}

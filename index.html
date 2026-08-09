@@ -27,7 +27,12 @@
   <!-- ================================ Sidebar ============================ -->
   <aside class="sidebar" aria-label="Workspace navigation">
     <div class="sidebar-head">
-      <a class="brand" href="#" aria-label="BIG A home">
+      <!-- A real button, not an anchor. It used to be href="#", which did
+           nothing except push a stray history entry; it now returns to the
+           home screen, so it has to be an activatable control that screen
+           readers announce as such rather than as a link to nowhere. -->
+      <button type="button" class="brand" id="brand-home" aria-label="BIG A home"
+              title="Go to the BIG A home screen">
         <span class="brand-mark">
           <svg viewBox="0 0 32 32" aria-hidden="true">
             <path d="M16 3l3.1 7.6L27 14l-7.9 3.4L16 25l-3.1-7.6L5 14l7.9-3.4z" fill="currentColor"/>
@@ -35,7 +40,7 @@
           </svg>
         </span>
         <span>BIG A</span>
-      </a>
+      </button>
       <!-- There is deliberately no collapse button here. The top-bar toggle
            does the same job and, unlike this one, stays reachable once the
            sidebar is hidden. Two controls for one state was just confusing. -->
@@ -57,12 +62,16 @@
         <ul id="chat-list" class="side-list" data-project="" aria-label="Chats not in a project"></ul>
       </div>
 
-      <div class="side-group">
+      <!-- The whole group is hidden together when the sidebar agents list is
+           switched off, heading and "+" button included. Agents remain
+           reachable from the switcher in the top bar and from Ctrl K. -->
+      <div class="side-group" id="agents-group">
         <div class="side-label">
           <span>Agents</span>
           <button id="add-agent" title="Add an agent" aria-label="Add an agent">+</button>
         </div>
         <ul id="agent-list" class="side-list"></ul>
+        <p class="agents-hidden-note" id="agents-hidden-note" hidden></p>
       </div>
 
       <div class="side-group">
@@ -106,6 +115,14 @@
            back except the keyboard shortcut. This is the way back. -->
       <button class="icon-btn" id="sidebar-btn" data-icon="menu" aria-pressed="true"
               aria-label="Hide the sidebar" title="Hide sidebar (Ctrl \)"></button>
+
+      <!-- Sits beside the sidebar toggle because the two do the same kind of
+           job. It SHRINKS the top bar rather than hiding it: this bar carries
+           the sidebar toggle, so a bar that could disappear entirely would
+           strand anyone who had already collapsed the sidebar. Shrunk, both
+           controls stay on screen and both stay clickable. -->
+      <button class="icon-btn" id="topbar-slim-btn" data-icon="collapseBar" aria-pressed="false"
+              aria-label="Shrink the top bar" title="Shrink top bar (Ctrl Shift \)"></button>
 
       <button class="agent-switch" id="agent-switch" aria-haspopup="menu" aria-expanded="false">
         <span id="agent-avatar"></span>
@@ -151,7 +168,12 @@
               aria-label="Restart the agent session" title="Restart session"></button>
       <button class="icon-btn" id="zen-btn" data-icon="expand" aria-pressed="false"
               aria-label="Toggle focus mode" title="Focus mode"></button>
-      <button class="icon-btn" id="theme-btn" aria-label="Toggle theme" title="Toggle theme"></button>
+      <!-- The bare light/dark toggle that used to live here has moved into
+           Settings › Appearance, where it sits with the colourways it now
+           interacts with. Toggling one without seeing the other made the
+           result unpredictable. This button opens that page instead. -->
+      <button class="icon-btn" id="appearance-btn" data-icon="palette"
+              aria-label="Appearance and theme" title="Appearance and theme"></button>
       <button class="btn btn-ghost" id="wb-btn">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <rect x="3" y="4" width="18" height="16" rx="2" stroke="currentColor" stroke-width="1.8" fill="none"/>
@@ -551,6 +573,28 @@
       <label for="agent-form-desc">Description (optional)</label>
       <input type="text" id="agent-form-desc" placeholder="What is this agent for?">
     </div>
+    <div class="field">
+      <label id="agent-form-icon-label">Icon (optional)</label>
+      <!-- The label has no `for`, because the control it names is a group of
+           buttons rather than one field. aria-labelledby carries the name
+           instead, so the group is still announced as "Icon (optional)". -->
+      <div class="icon-picker" role="group" aria-labelledby="agent-form-icon-label">
+        <span class="icon-preview" id="agent-form-icon-preview" aria-hidden="true"></span>
+        <span class="icon-picker-acts">
+          <!-- SVG is deliberately absent from `accept`. The image sanitiser
+               refuses data:image/svg+xml because an SVG is a script-bearing
+               document, and offering a file type that will then be rejected
+               is worse than not offering it. -->
+          <button class="btn btn-ghost btn-sm" type="button" id="agent-form-icon-pick">Upload image</button>
+          <button class="btn btn-quiet btn-sm" type="button" id="agent-form-icon-clear" hidden>Remove</button>
+          <input type="file" id="agent-form-icon-file"
+                 accept="image/png,image/jpeg,image/gif,image/webp,image/avif" hidden>
+        </span>
+      </div>
+      <div class="hint">PNG, JPEG, GIF, WebP or AVIF. The picture is cropped to a square,
+        scaled down to 128&nbsp;&times;&nbsp;128 and stored in this browser, so nothing is
+        uploaded anywhere. Leave it empty to use the agent&rsquo;s initials.</div>
+    </div>
   </div>
   <div class="modal-foot">
     <button class="btn btn-quiet" data-close>Cancel</button>
@@ -592,6 +636,13 @@
       </span>
       <button class="switch" data-toggle="autoOpenWorkbench" role="switch" aria-checked="true"
               aria-label="Toggle automatic workbench"></button>
+    </div>
+    <div class="set-row">
+      <span class="info">
+        <strong>Appearance</strong>
+        <span>Light or dark, the colourway of the whole workspace, and what the sidebar shows.</span>
+      </span>
+      <button class="btn btn-ghost btn-sm" id="appearance-open">Open</button>
     </div>
     <div class="set-row">
       <span class="info">
@@ -645,6 +696,138 @@
       they survive page closure, browser restarts and shutting the machine down. Use
       <strong>Back up</strong> to move a workspace to another browser or computer.
     </p>
+  </div>
+  <div class="modal-foot">
+    <button class="btn btn-primary" data-close>Done</button>
+  </div>
+</div>
+
+<!-- ============================ Appearance ============================= -->
+<!-- Light/dark and the colourway are two axes of one decision, so they share
+     a page. Splitting them (a toggle in the top bar, a picker in here) is what
+     made the old arrangement guesswork: you could not see what dark mode did
+     to a colourway without leaving the page that chose it. -->
+<div class="modal" id="appearance-modal" role="dialog" aria-labelledby="appearance-title">
+  <div class="modal-head">
+    <h2 id="appearance-title">Appearance</h2>
+    <button class="icon-btn" data-close data-icon="x" aria-label="Close"></button>
+  </div>
+  <div class="modal-body">
+
+    <section class="appearance-section" aria-labelledby="appearance-mode-h">
+      <h3 id="appearance-mode-h">Light and dark</h3>
+      <div class="set-row">
+        <span class="info">
+          <strong>Dark mode</strong>
+          <span>Applies to whichever colourway is selected below &mdash; every colourway
+            has its own dark version, so the two settings work together.</span>
+        </span>
+        <button class="switch" id="dark-toggle" role="switch" aria-checked="false"
+                aria-label="Toggle dark mode"></button>
+      </div>
+    </section>
+
+    <section class="appearance-section">
+      <h3 id="appearance-palette-h">Colourway</h3>
+      <!-- radiogroup, not a list of buttons: exactly one is chosen at a time,
+           and arrow keys should move between them. -->
+      <div class="palette-grid" id="palette-grid" role="radiogroup"
+           aria-labelledby="appearance-palette-h">
+
+        <button type="button" class="palette-card" role="radio" aria-checked="true" data-palette="clay">
+          <span class="palette-swatch" aria-hidden="true">
+            <i style="background:#F0EEE6"></i><i style="background:#F5F3EE"></i>
+            <i style="background:#E3E1D9"></i><i style="background:#C96442"></i>
+          </span>
+          <span class="palette-name">
+            Clay
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 12 5 5L20 6" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>
+          <span class="palette-desc">The original warm paper and terracotta.</span>
+        </button>
+
+        <button type="button" class="palette-card" role="radio" aria-checked="false" data-palette="blue">
+          <span class="palette-swatch" aria-hidden="true">
+            <i style="background:#ECF1F8"></i><i style="background:#E5EDF7"></i>
+            <i style="background:#D6E1EF"></i><i style="background:#3E7FC1"></i>
+          </span>
+          <span class="palette-name">
+            Pastel blue
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 12 5 5L20 6" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>
+          <span class="palette-desc">Cool and quiet, with a soft cornflower accent.</span>
+        </button>
+
+        <button type="button" class="palette-card" role="radio" aria-checked="false" data-palette="grey">
+          <span class="palette-swatch" aria-hidden="true">
+            <i style="background:#EFEFEF"></i><i style="background:#E8E8E8"></i>
+            <i style="background:#DCDCDC"></i><i style="background:#4E5257"></i>
+          </span>
+          <span class="palette-name">
+            Grey
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 12 5 5L20 6" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>
+          <span class="palette-desc">Neutral throughout. Nothing competes with your content.</span>
+        </button>
+
+        <button type="button" class="palette-card" role="radio" aria-checked="false" data-palette="orchid">
+          <span class="palette-swatch" aria-hidden="true">
+            <i style="background:#F5EDF6"></i><i style="background:#F0E4F2"></i>
+            <i style="background:#E6D6EA"></i><i style="background:#A9539B"></i>
+          </span>
+          <span class="palette-name">
+            Pinkish purple
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 12 5 5L20 6" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>
+          <span class="palette-desc">Pale mauve surfaces under a deeper orchid accent.</span>
+        </button>
+
+        <button type="button" class="palette-card" role="radio" aria-checked="false" data-palette="forest">
+          <span class="palette-swatch" aria-hidden="true">
+            <i style="background:#EDF2EC"></i><i style="background:#E4EDE3"></i>
+            <i style="background:#D7E3D6"></i><i style="background:#3F7D57"></i>
+          </span>
+          <span class="palette-name">
+            Forest
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 12 5 5L20 6" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>
+          <span class="palette-desc">Muted green, chosen to sit calmly beside long reading.</span>
+        </button>
+      </div>
+    </section>
+
+    <section class="appearance-section">
+      <h3>Layout</h3>
+      <div class="set-row">
+        <span class="info">
+          <strong>Shrink the top bar</strong>
+          <span>Collapse the top bar to a narrow strip. It never disappears entirely, because
+            the sidebar control lives there.</span>
+        </span>
+        <button class="switch" id="slim-toggle" role="switch" aria-checked="false"
+                aria-label="Toggle the slim top bar"></button>
+      </div>
+      <div class="set-row">
+        <span class="info">
+          <strong>Show agents in the sidebar</strong>
+          <span>Turn this off to remove the Agents list from the sidebar. Agents stay
+            available from the switcher at the top of the window and from the command
+            palette, so none of them become unreachable.</span>
+        </span>
+        <button class="switch" data-toggle="showAgents" id="show-agents-toggle" role="switch"
+                aria-checked="true" aria-label="Toggle the sidebar agents list"></button>
+      </div>
+      <div class="set-row">
+        <span class="info">
+          <strong>Show individually hidden agents</strong>
+          <span>Each agent can be hidden on its own using the eye button on its row.
+            Turn this on to see those agents again so they can be un-hidden.</span>
+        </span>
+        <button class="switch" data-toggle="showHiddenAgents" id="show-hidden-agents-toggle"
+                role="switch" aria-checked="false" aria-label="Reveal individually hidden agents"></button>
+      </div>
+    </section>
+
   </div>
   <div class="modal-foot">
     <button class="btn btn-primary" data-close>Done</button>

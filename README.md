@@ -293,6 +293,7 @@ Two consequences are worth knowing before editing it:
 | --- | --- |
 | `Ctrl/Cmd + K` | Command palette |
 | `Ctrl/Cmd + \` | Show or hide the sidebar |
+| `Ctrl/Cmd + Shift + \` | Shrink or expand the top bar |
 | `Ctrl/Cmd + J` | Show or hide the workbench |
 | `Ctrl/Cmd + Shift + O` | New chat |
 | `Enter` | Send |
@@ -308,10 +309,62 @@ focus mode always shows an **Exit focus** button in the corner.
 | Area | What it does |
 | --- | --- |
 | Sidebar | Recents, Agents, Projects. Drag a chat onto a project to file it; drag it back to Recents to unfile it. |
-| Top bar | Sidebar toggle, agent switcher (with the agent's mark and name), connection state, and the usage note. Hover the connection pill for the transport in use and what the agent is currently doing. |
+| Top bar | Sidebar toggle, top-bar shrink toggle, agent switcher (with the agent's mark and name), connection state, the usage note and the appearance button. Hover the connection pill for the transport in use and what the agent is currently doing. |
+| BIG A mark | The mark at the top of the sidebar returns to the home screen: the welcome pane a fresh install opens on. It closes the live session and deselects the current chat. Nothing is deleted. |
+| Slim top bar | Shrinks the top bar to a 34px strip, folding away the usage note, the Commands button and the Workbench label. It never hides the bar completely, because the sidebar toggle lives there. |
 | Focus mode | Hides the sidebar, workbench **and** top bar so the conversation has the whole window. Leave it with `Esc` or the corner button. |
 | Conversation | Native messages, streamed as they are written. Hover one to copy it, send it to the workbench, retry it or delete it. Click an attachment for a full preview. Drop files anywhere on the panel. |
 | Workbench | Renders markdown artifacts, tables and charts, and extracts text from files. |
+
+## Appearance
+
+**Settings → Appearance**, or the palette button in the top bar, or
+`Ctrl/Cmd + K` → *Appearance*.
+
+Two independent settings combine there:
+
+| Setting | Values |
+| --- | --- |
+| Dark mode | On or off. It used to be a bare toggle in the top bar; it moved here so it sits with the colourways it now interacts with. |
+| Colourway | Clay (the original), Pastel blue, Grey, Pinkish purple, Forest |
+
+Every colourway has both a light and a dark version, so the two settings are
+genuinely combinable — ten looks, not five. Under the hood the theme is
+`<html data-theme="light|dark">` and the colourway is `<html data-palette="…">`;
+`assets/css/styles.css` carries a matching pair of rules for each colourway.
+Adding a sixth means adding one entry to `PALETTES` in `app.js`, one card in
+`index.html`, and both halves of the rule in the stylesheet.
+
+Both values are mirrored into `localStorage` (`biga.theme`, `biga.palette`) and
+repainted before the first frame, so there is no flash of the wrong colour on
+load. `Store.wipe()` clears both. A stored colourway that is not in the
+whitelist falls back to Clay rather than being written onto the document.
+
+The same page also holds the two sidebar controls:
+
+- **Show agents in the sidebar** removes the whole Agents group.
+- **Show individually hidden agents** reveals agents hidden one at a time with
+  the eye button on their row.
+
+Neither can strand an agent. The switcher at the top of the window and the
+command palette always list every agent, hidden or not, and the sidebar prints
+a count of how many are hidden and where to turn them back on.
+
+## Agent icons
+
+Each agent can carry its own picture. Add one when you create the agent, or
+click the pencil on its row in the sidebar to edit an existing agent.
+
+PNG, JPEG, GIF, WebP and AVIF are accepted, up to 6 MB. The file is not stored
+as you supplied it: it is centre-cropped to a square, drawn into a canvas at
+128 × 128 and re-encoded as a PNG, so what is saved is a plain bitmap this page
+produced. Metadata, trailing payloads and malformed structure in the original
+do not survive that round trip. The result is held with the agent in IndexedDB
+and travels with a backup. Nothing is uploaded anywhere.
+
+SVG is deliberately not accepted. An SVG is a document that can carry script,
+which is also why `safeMarkdownUrl()` refuses `data:image/svg+xml`. Agents
+without a picture keep their initials on a stable, name-derived tint.
 
 ## Files
 

@@ -442,7 +442,15 @@
     jobs.push(Promise.resolve().then(function () {
       try {
         Object.keys(localStorage).forEach(function (key) {
-          if (key.indexOf(LS_PREFIX) === 0 || key === "biga.theme") localStorage.removeItem(key);
+          // The appearance mirrors are named individually rather than matched
+          // by prefix, because LS_PREFIX belongs to the fallback store. Any
+          // new "biga." key that app.js writes for flash prevention has to be
+          // added here too, or "Erase everything" will leave it behind.
+          if (key.indexOf(LS_PREFIX) === 0 ||
+              key === "biga.theme" ||
+              key === "biga.palette") {
+            localStorage.removeItem(key);
+          }
         });
       } catch (e) { noop(); }
     }));

@@ -19,6 +19,30 @@
   /* ------------------------------------------------------------- constants */
 
   var THEME_KEY = "biga.theme";   // mirrored to localStorage to avoid a flash
+  var PALETTE_KEY = "biga.palette";
+
+  /* The colourways. `id` is the value of the data-palette attribute that the
+     stylesheet keys off; every entry here must have a matching pair of rules
+     in styles.css (a light half and a dark half). "clay" is the original look
+     and is treated as the default, so an install that has never opened the
+     appearance page renders exactly as it did before.
+
+     Kept as a whitelist rather than trusting whatever is in storage: the value
+     goes straight onto an attribute of <html>, so it must be one of these. */
+  var PALETTES = ["clay", "blue", "grey", "orchid", "forest"];
+  var PALETTE_LABEL = {
+    clay: "Clay",
+    blue: "Pastel blue",
+    grey: "Grey",
+    orchid: "Pinkish purple",
+    forest: "Forest"
+  };
+
+  /* Uploaded agent icons are re-encoded to a square PNG at this size. Large
+     enough for the 30px avatar on a 2x display, small enough that a handful of
+     agents cannot fill the preferences record. */
+  var ICON_PX = 128;
+  var ICON_MAX_BYTES = 6 * 1024 * 1024;   // refused before decoding
 
   /* There is deliberately no seeded agent. A fresh install starts on the
      welcome pane and the first agent is whichever one the user adds, so the
@@ -55,7 +79,11 @@
     lock: '<rect x="4" y="10" width="16" height="11" rx="2" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M8 10V7a4 4 0 0 1 8 0v3" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/>',
     chevron: '<path d="m9 6 6 6-6 6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>',
     pencil: '<path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17z" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linejoin="round"/>',
-    plug: '<path d="M9 3v6M15 3v6M6 9h12v3a6 6 0 0 1-12 0zM12 18v3" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>'
+    plug: '<path d="M9 3v6M15 3v6M6 9h12v3a6 6 0 0 1-12 0zM12 18v3" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>',
+    palette: '<path d="M12 3a9 9 0 0 0 0 18c1.1 0 1.8-.8 1.8-1.7 0-.5-.2-.9-.5-1.2-.3-.3-.5-.7-.5-1.1 0-1 .8-1.8 1.8-1.8H16a5 5 0 0 0 5-5c0-4-4-7.2-9-7.2z" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linejoin="round"/><circle cx="7.8" cy="11.5" r="1.05" fill="currentColor"/><circle cx="11" cy="7.6" r="1.05" fill="currentColor"/><circle cx="15.6" cy="8.6" r="1.05" fill="currentColor"/>',
+    collapseBar: '<path d="M4 5h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M12 20V11m0 0-3 3m3-3 3 3" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>',
+    eye: '<path d="M2.5 12S6 5.8 12 5.8 21.5 12 21.5 12 18 18.2 12 18.2 2.5 12 2.5 12z" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linejoin="round"/><circle cx="12" cy="12" r="2.7" stroke="currentColor" stroke-width="1.7" fill="none"/>',
+    eyeOff: '<path d="M4 4l16 16" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><path d="M9.9 5.9A9.4 9.4 0 0 1 12 5.7c6 0 9.5 6.3 9.5 6.3a17 17 0 0 1-3.2 3.9M6.4 7.9A17 17 0 0 0 2.5 12S6 18.3 12 18.3c1.2 0 2.3-.2 3.3-.6" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M9.8 9.9a3 3 0 0 0 4.2 4.2" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round"/>'
   };
 
   function icon(name, cls) {
@@ -89,13 +117,27 @@
 
   var state = {
     theme: "light",
+    // Second axis of the appearance decision. See PALETTES above.
+    palette: "clay",
+    // Whether the top bar is in its shrunken form. Persisted, because a layout
+    // preference that resets on every reload is not a preference.
+    slimTopbar: false,
     agents: [],
     activeAgent: "default",
     activeChat: null,
     // The workbench is opt-in. Opening a side panel unasked on first load
     // buries the conversation and surprises people; it is one click or
     // Ctrl/Cmd + J away whenever it is wanted.
-    settings: { fileAttach: true, autoOpenWorkbench: false },
+    // `showAgents` hides the whole Agents group in the sidebar;
+    // `showHiddenAgents` reveals agents that were hidden one at a time. Both
+    // are presentation only: the top-bar switcher and the command palette
+    // always list every agent, so nothing here can strand one.
+    settings: {
+      fileAttach: true,
+      autoOpenWorkbench: false,
+      showAgents: true,
+      showHiddenAgents: false
+    },
     // How much of the embedded canvas's own header is hidden behind our top
     // bar, in CSS pixels. 0 shows it. Stored separately from the boolean
     // switches above because it is a number, not a toggle.
@@ -128,6 +170,8 @@
   function savePrefs() {
     return Promise.all([
       Store.kv.set("theme", state.theme),
+      Store.kv.set("palette", state.palette),
+      Store.kv.set("slimTopbar", state.slimTopbar),
       Store.kv.set("agents", state.agents),
       Store.kv.set("activeAgent", state.activeAgent),
       Store.kv.set("activeChat", state.activeChat),
@@ -141,6 +185,10 @@
   function loadPrefs() {
     return Store.kv.all().then(function (kv) {
       if (kv.theme) state.theme = kv.theme;
+      // Anything not in the whitelist falls back to the default rather than
+      // being written onto <html>.
+      if (kv.palette && PALETTES.indexOf(kv.palette) !== -1) state.palette = kv.palette;
+      if (typeof kv.slimTopbar === "boolean") state.slimTopbar = kv.slimTopbar;
       if (kv.settings && typeof kv.settings === "object") {
         Object.keys(state.settings).forEach(function (k) {
           if (typeof kv.settings[k] === "boolean") state.settings[k] = kv.settings[k];
@@ -333,12 +381,53 @@
   /* ----------------------------------------------------------------- theme */
 
   function applyTheme(t) {
-    state.theme = t;
-    document.documentElement.setAttribute("data-theme", t);
-    $("#theme-btn").innerHTML = icon(t === "dark" ? "sun" : "moon");
-    $("#theme-btn").setAttribute("aria-label", t === "dark" ? "Switch to light theme" : "Switch to dark theme");
-    try { localStorage.setItem(THEME_KEY, t); } catch (e) { /* ignore */ }
-    Store.kv.set("theme", t);
+    state.theme = t === "dark" ? "dark" : "light";
+    document.documentElement.setAttribute("data-theme", state.theme);
+    // The old top-bar theme button has moved into the appearance page, so this
+    // is written defensively: applyTheme runs before the appearance controls
+    // are necessarily in the document, and it must not throw either way.
+    var sw = $("#dark-toggle");
+    if (sw) sw.setAttribute("aria-checked", String(state.theme === "dark"));
+    try { localStorage.setItem(THEME_KEY, state.theme); } catch (e) { /* ignore */ }
+    Store.kv.set("theme", state.theme);
+  }
+
+  /**
+   * The colourway. Written as a separate attribute from the theme so the two
+   * compose: styles.css carries a light and a dark rule for every colourway,
+   * and the browser picks the pair. Doing it as one combined value would have
+   * meant ten mutually exclusive themes instead of five plus a switch.
+   */
+  function applyPalette(p) {
+    if (PALETTES.indexOf(p) === -1) p = "clay";
+    state.palette = p;
+    document.documentElement.setAttribute("data-palette", p);
+    syncPaletteCards();
+    try { localStorage.setItem(PALETTE_KEY, p); } catch (e) { /* ignore */ }
+    Store.kv.set("palette", p);
+  }
+
+  function syncPaletteCards() {
+    $$("#palette-grid [data-palette]").forEach(function (card) {
+      var on = card.dataset.palette === state.palette;
+      card.setAttribute("aria-checked", String(on));
+      // Roving tabindex: the group is one tab stop, arrows move within it.
+      card.tabIndex = on ? 0 : -1;
+    });
+  }
+
+  /** Open the appearance page with every control showing the live state. */
+  function openAppearance() {
+    var dark = $("#dark-toggle");
+    if (dark) dark.setAttribute("aria-checked", String(state.theme === "dark"));
+    var slim = $("#slim-toggle");
+    if (slim) slim.setAttribute("aria-checked", String(!!state.slimTopbar));
+    var sa = $("#show-agents-toggle");
+    if (sa) sa.setAttribute("aria-checked", String(!!state.settings.showAgents));
+    var sh = $("#show-hidden-agents-toggle");
+    if (sh) sh.setAttribute("aria-checked", String(!!state.settings.showHiddenAgents));
+    syncPaletteCards();
+    openModal("#appearance-modal");
   }
 
   /* ------------------------------------------------------- connection pill */
@@ -422,6 +511,38 @@
     document.title = "BIG A";
     setStatus("idle", "Add an agent to get started");
     syncTopbarMode();
+    return Promise.resolve();
+  }
+
+  /**
+   * The BIG A mark in the sidebar head. It was an anchor pointing at "#",
+   * which did nothing at all; it now returns to the home screen — the same
+   * welcome pane a fresh install opens on, before any agent has been added.
+   *
+   * Nothing is deleted. The live session is closed and the open chat is
+   * deselected so that clicking that same chat in the sidebar reopens it (the
+   * chat opener short-circuits when the requested chat is already the active
+   * one, so leaving it selected would have made the sidebar look broken).
+   * Agents, chats, projects and settings are all untouched.
+   */
+  function goHome() {
+    Chat.disconnect();
+    stopEmbed();
+    document.body.classList.remove("zen");
+    state.activeChat = null;
+    savePrefs();
+    showPane("welcome");
+    // The top bar still names the active agent: the home screen is a place in
+    // the app, not a sign-out, and blanking the agent would suggest otherwise.
+    var agent = hasAgent() ? currentAgent() : null;
+    $("#agent-name").textContent = agent ? agent.name : "No agent";
+    $("#wb-agent").textContent = agent ? agent.name : "No agent";
+    renderAgentAvatar();
+    document.title = "BIG A";
+    setStatus("idle", agent ? "Home — start a new chat when you are ready" : "Add an agent to get started");
+    renderSidebar();
+    syncTopbarMode();
+    applyEmbedCrop();
     return Promise.resolve();
   }
 
@@ -525,6 +646,10 @@
   /** Current path: Direct-to-Engine over the Microsoft 365 Agents SDK. */
   function connectActiveChat() {
     if (!hasAgent()) return showWelcome();
+    // Leaving the home screen by picking an agent, rather than by picking a
+    // chat, arrives here with nothing selected. Start a conversation instead
+    // of asking the store to load messages for a chat that does not exist.
+    if (!state.activeChat) return newChat();
 
     var agent = currentAgent();
     var conn = effectiveConn(agent);
@@ -836,25 +961,63 @@
     fillTitles(host, chats);
   }
 
+  /** The agents the sidebar should list, given the two visibility settings. */
+  function visibleAgents() {
+    if (state.settings.showHiddenAgents) return state.agents.slice();
+    return state.agents.filter(function (a) { return !a.hidden; });
+  }
+
   function renderAgents() {
     var host = $("#agent-list");
+    var group = $("#agents-group");
+    var note = $("#agents-hidden-note");
+
+    // The whole group can be switched off. Hiding the list but leaving its
+    // heading and "+" button behind would look like a rendering failure.
+    if (group) group.hidden = !state.settings.showAgents;
+    if (!state.settings.showAgents) return;
+
     if (!state.agents.length) {
       host.innerHTML = '<li class="side-note">No agents yet. Use <strong>+</strong> above to add one.</li>';
+      if (note) note.hidden = true;
       return;
     }
-    host.innerHTML = state.agents.map(function (a) {
+
+    var shown = visibleAgents();
+    var buried = state.agents.length - shown.length;
+
+    // Say so, rather than letting an agent silently vanish from the sidebar
+    // with no clue about where it went or how to get it back.
+    if (note) {
+      note.hidden = buried === 0;
+      note.textContent = buried === 0 ? "" :
+        buried + (buried === 1 ? " agent is hidden." : " agents are hidden.") +
+        " Turn on “Show individually hidden agents” in Settings › Appearance to see them.";
+    }
+
+    if (!shown.length) { host.innerHTML = ""; return; }
+
+    host.innerHTML = shown.map(function (a) {
       return '<li><button class="side-item' + (a.id === state.activeAgent ? " active" : "") +
+        (a.hidden ? " is-hidden-agent" : "") +
         '" data-agent="' + a.id + '"><span class="txt"></span>' +
-        '<span class="row-acts"><span class="del" data-agentdel="' + a.id +
+        '<span class="row-acts">' +
+        '<span class="act" data-agenticon="' + a.id + '" role="button" tabindex="0" ' +
+        'aria-label="Edit this agent">' + icon("pencil") + "</span>" +
+        '<span class="act' + (a.hidden ? " on" : "") + '" data-agenthide="' + a.id + '" role="button" tabindex="0" ' +
+        'aria-label="' + (a.hidden ? "Show this agent in the sidebar" : "Hide this agent from the sidebar") + '">' +
+        icon(a.hidden ? "eyeOff" : "eye") + "</span>" +
+        '<span class="del" data-agentdel="' + a.id +
         '" role="button" tabindex="0" aria-label="Remove agent">' + icon("trash") + "</span></span>" +
         "</button></li>";
     }).join("");
     // Names and avatars are set as nodes, never interpolated into markup, so
     // an agent named with a stray angle bracket cannot break the list.
     $$("[data-agent]", host).forEach(function (btn, i) {
-      var a = state.agents[i];
+      var a = shown[i];
       btn.insertBefore(A.avatar(a, "sm"), btn.firstChild);
       $(".txt", btn).textContent = a.name;
+      btn.title = a.name + (a.hidden ? " (hidden from the sidebar)" : "");
     });
   }
 
@@ -1288,6 +1451,9 @@
     { id: "wb", label: "Toggle workbench", grp: "View", icon: "panel", run: toggleWorkbench },
     { id: "theme", label: "Toggle light / dark theme", grp: "View", icon: "moon", run: function () { applyTheme(state.theme === "dark" ? "light" : "dark"); } },
     { id: "sidebar", label: "Toggle sidebar", grp: "View", icon: "menu", run: toggleSidebar },
+    { id: "slimbar", label: "Shrink / expand the top bar", grp: "View", icon: "collapseBar", run: toggleTopbarSlim },
+    { id: "appearance", label: "Appearance, theme & colourway", grp: "View", icon: "palette", run: openAppearance },
+    { id: "home", label: "Go to the home screen", grp: "View", icon: "sparkle", run: goHome },
     { id: "art", label: "Open artifact studio", grp: "Workbench", icon: "doc", run: function () { openWorkbench("artifact"); } },
     { id: "chart", label: "Open chart builder", grp: "Workbench", icon: "chart", run: function () { openWorkbench("chart"); } },
     { id: "files", label: "Open file attachments", grp: "Workbench", icon: "paperclip", run: function () { openWorkbench("files"); } },
@@ -1489,12 +1655,118 @@
     askReturnFocus = null;
   }
 
-  function openAgentModal() {
-    $("#agent-form-name").value = "";
-    $("#agent-form-url").value = "";
-    $("#agent-form-desc").value = "";
+  /* ------------------------------------------------- add / edit an agent */
+
+  /* The agent being edited, or null when the modal is adding a new one. */
+  var agentEditing = null;
+  /* The icon staged by the file picker, as a data URL, before Save is pressed.
+     Held separately so cancelling the modal cannot alter a stored agent. */
+  var agentIconDraft = null;
+
+  function agentById(id) {
+    for (var i = 0; i < state.agents.length; i++) {
+      if (state.agents[i].id === id) return state.agents[i];
+    }
+    return null;
+  }
+
+  /**
+   * `id` is optional. This function is also wired directly as a click handler
+   * and as a command-palette action, both of which call it with an Event or
+   * with nothing, so anything that is not a string is treated as "add new".
+   */
+  function openAgentModal(id) {
+    var a = typeof id === "string" ? agentById(id) : null;
+    agentEditing = a ? a.id : null;
+    agentIconDraft = a && typeof a.icon === "string" ? a.icon : null;
+
+    $("#agent-form-name").value = a ? a.name : "";
+    $("#agent-form-url").value = a ? a.url : "";
+    $("#agent-form-desc").value = a && a.desc ? a.desc : "";
+    var modeSel = $("#agent-form-mode");
+    if (modeSel) modeSel.value = a && a.conn && a.conn.mode ? a.conn.mode : "";
+
+    $("#agent-modal-title").textContent = a ? "Edit agent" : "Add an agent";
+    $("#agent-save").textContent = a ? "Save changes" : "Add agent";
+
+    renderIconDraft();
     openModal("#agent-modal");
     setTimeout(function () { $("#agent-form-name").focus(); }, 40);
+  }
+
+  /** Show the staged icon, or the initials that would be used instead. */
+  function renderIconDraft() {
+    var host = $("#agent-form-icon-preview");
+    if (!host) return;
+    host.textContent = "";
+    // A throwaway agent-shaped object, so the preview goes through exactly the
+    // same avatar renderer (and the same URL filter) as the real thing.
+    host.appendChild(A.avatar({
+      name: $("#agent-form-name").value.trim() || "New agent",
+      icon: agentIconDraft || ""
+    }, "lg"));
+    var clear = $("#agent-form-icon-clear");
+    if (clear) clear.hidden = !agentIconDraft;
+  }
+
+  /**
+   * Turn a chosen file into a square PNG data URL.
+   *
+   * Re-encoding through a canvas is not merely a resize. It means the bytes
+   * that get stored are produced by this page, not supplied by the file: any
+   * metadata, trailing payload or malformed structure in the original is
+   * discarded, and what remains is a plain bitmap. SVG is refused outright,
+   * because an SVG is a document that can carry script, which is also why the
+   * shared URL filter rejects data:image/svg+xml.
+   */
+  function readAgentIcon(file) {
+    if (!file) return;
+    if (!/^image\/(png|jpeg|gif|webp|avif)$/.test(file.type || "")) {
+      toast("Choose a PNG, JPEG, GIF, WebP or AVIF image.", "err");
+      return;
+    }
+    if (file.size > ICON_MAX_BYTES) {
+      toast("That image is larger than 6 MB. Choose a smaller one.", "err");
+      return;
+    }
+
+    var objUrl = URL.createObjectURL(file);
+    var img = new Image();
+    img.onload = function () {
+      try {
+        var w = img.naturalWidth || img.width;
+        var h = img.naturalHeight || img.height;
+        if (!w || !h) throw new Error("empty image");
+        // Centre crop to a square first, so a wide banner does not arrive
+        // squashed into the avatar.
+        var side = Math.min(w, h);
+        var sx = Math.round((w - side) / 2);
+        var sy = Math.round((h - side) / 2);
+
+        var c = document.createElement("canvas");
+        c.width = ICON_PX;
+        c.height = ICON_PX;
+        var g = c.getContext("2d");
+        g.imageSmoothingQuality = "high";
+        g.drawImage(img, sx, sy, side, side, 0, 0, ICON_PX, ICON_PX);
+
+        var url = c.toDataURL("image/png");
+        // Belt and braces: the avatar renderer will only accept a data URL in
+        // one of a few image types, so check here rather than storing
+        // something that would silently fail to render later.
+        if (url.indexOf("data:image/png;base64,") !== 0) throw new Error("encode failed");
+        agentIconDraft = url;
+      } catch (e) {
+        toast("That image could not be prepared. Try a different file.", "err");
+      }
+      URL.revokeObjectURL(objUrl);
+      renderIconDraft();
+    };
+    img.onerror = function () {
+      URL.revokeObjectURL(objUrl);
+      toast("This browser could not read that image.", "err");
+    };
+    img.src = objUrl;
   }
 
   /* --------------------------------------------------- connection & sign-in */
@@ -2135,21 +2407,63 @@
       return;
     }
     if (url !== raw) $("#agent-form-url").value = url;
+
+    var desc = $("#agent-form-desc").value.trim();
+    var modeSel = $("#agent-form-mode");
+    var mode = modeSel ? modeSel.value : "";
+
+    /* ---- editing an agent that already exists ---- */
+    var existing = agentEditing ? agentById(agentEditing) : null;
+    if (existing) {
+      var urlChanged = existing.url !== url;
+      existing.name = name;
+      existing.url = url;
+      existing.desc = desc;
+      // A cleared picture must remove the stored one, so this is assigned
+      // unconditionally rather than only when a new file was chosen.
+      if (agentIconDraft) existing.icon = agentIconDraft;
+      else delete existing.icon;
+      // Only the mode is touched here. The rest of an agent's connection
+      // record (endpoints, ids) belongs to the connection modal and must
+      // survive a rename.
+      if (mode) {
+        existing.conn = existing.conn || {};
+        existing.conn.mode = mode;
+      } else if (existing.conn) {
+        delete existing.conn.mode;
+      }
+      agentEditing = null;
+      agentIconDraft = null;
+      savePrefs();
+      renderAgents();
+      renderAgentMenu();
+      renderAgentAvatar();
+      closeModals();
+      toast("Saved " + name);
+      // Changing where an agent points has to take effect now; a rename alone
+      // does not justify tearing down a live conversation.
+      if (urlChanged && existing.id === state.activeAgent) connectActiveChat();
+      return;
+    }
+
+    /* ---- adding a new agent ---- */
     // `addedAt` marks this as a real, user-created agent, which is what the
     // stale-seed cleanup in loadPrefs looks for.
     var a = {
       id: uid(),
       name: name,
       url: url,
-      desc: $("#agent-form-desc").value.trim(),
+      desc: desc,
       builtin: false,
+      hidden: false,
       addedAt: Date.now()
     };
+    if (agentIconDraft) a.icon = agentIconDraft;
 
     // An agent may be pinned to its own transport at the moment it is added.
-    var modeSel = $("#agent-form-mode");
-    if (modeSel && modeSel.value) a.conn = { mode: modeSel.value };
+    if (mode) a.conn = { mode: mode };
 
+    agentIconDraft = null;
     state.agents.push(a);
     state.activeAgent = a.id;
     savePrefs();
@@ -2158,6 +2472,20 @@
     closeModals();
     toast("Added " + name);
     newChat();
+  }
+
+  /** Flip one agent's sidebar visibility. */
+  function toggleAgentHidden(id) {
+    var a = agentById(id);
+    if (!a) return;
+    a.hidden = !a.hidden;
+    savePrefs();
+    renderAgents();
+    if (a.hidden && !state.settings.showHiddenAgents) {
+      toast(a.name + " hidden from the sidebar. It is still in the agent switcher.");
+    } else if (!a.hidden) {
+      toast(a.name + " shown in the sidebar again.");
+    }
   }
 
   function renderAgentMenu() {
@@ -2212,6 +2540,38 @@
   }
 
   /**
+   * The slim top bar.
+   *
+   * This SHRINKS the bar; it never removes it. That is a deliberate limit, not
+   * an unfinished feature. The sidebar toggle lives in this bar, so a top bar
+   * that could be hidden outright would take the only pointer route back to
+   * the sidebar with it — collapse both and the window would have no chrome at
+   * all. Shrunk, the bar keeps its two layout toggles, the agent switcher and
+   * the connection pill, so every state is reversible with one click.
+   *
+   * Focus mode does hide the bar completely, and pays for that with a floating
+   * exit chip. There is no need for a second control with the same cost.
+   */
+  function setTopbarSlim(on) {
+    state.slimTopbar = !!on;
+    document.body.classList.toggle("topbar-slim", state.slimTopbar);
+
+    var btn = $("#topbar-slim-btn");
+    if (btn) {
+      btn.setAttribute("aria-pressed", String(state.slimTopbar));
+      btn.setAttribute("aria-label", state.slimTopbar ? "Expand the top bar" : "Shrink the top bar");
+      btn.title = (state.slimTopbar ? "Expand top bar" : "Shrink top bar") + " (Ctrl Shift \\)";
+    }
+    var sw = $("#slim-toggle");
+    if (sw) sw.setAttribute("aria-checked", String(state.slimTopbar));
+  }
+
+  function toggleTopbarSlim() {
+    setTopbarSlim(!state.slimTopbar);
+    savePrefs();
+  }
+
+  /**
    * Focus mode. Hides the sidebar, the workbench and the top bar so the
    * conversation has the whole window.
    *
@@ -2238,10 +2598,12 @@
   function bindEvents() {
     $("#reload-btn").addEventListener("click", function () { connectActiveChat(); toast("Reconnecting"); });
     $("#zen-btn").addEventListener("click", toggleZen);
-    $("#theme-btn").addEventListener("click", function () { applyTheme(state.theme === "dark" ? "light" : "dark"); });
+    $("#appearance-btn").addEventListener("click", openAppearance);
     $("#wb-btn").addEventListener("click", toggleWorkbench);
     $("#wb-close").addEventListener("click", function () { $(".app").classList.remove("workbench-open"); });
     $("#sidebar-btn").addEventListener("click", toggleSidebar);
+    $("#topbar-slim-btn").addEventListener("click", toggleTopbarSlim);
+    $("#brand-home").addEventListener("click", goHome);
     $("#zen-exit").addEventListener("click", toggleZen);
     // Crossing the mobile breakpoint swaps which class means "shown".
     window.addEventListener("resize", syncSidebarBtn);
@@ -2257,6 +2619,14 @@
     $("#project-list").addEventListener("click", onProjectListClick);
 
     $("#agent-list").addEventListener("click", function (e) {
+      // Row actions are checked before the row itself, so clicking the eye or
+      // the pencil does not also switch to that agent.
+      var hide = e.target.closest("[data-agenthide]");
+      if (hide) { e.stopPropagation(); toggleAgentHidden(hide.dataset.agenthide); return; }
+
+      var edit = e.target.closest("[data-agenticon]");
+      if (edit) { e.stopPropagation(); openAgentModal(edit.dataset.agenticon); return; }
+
       var del = e.target.closest("[data-agentdel]");
       if (del) {
         e.stopPropagation();
@@ -2509,6 +2879,62 @@
       });
     });
 
+    /* ---------------------------------------------------- appearance page */
+
+    $("#appearance-open").addEventListener("click", openAppearance);
+
+    $("#dark-toggle").addEventListener("click", function () {
+      applyTheme(state.theme === "dark" ? "light" : "dark");
+    });
+
+    $("#slim-toggle").addEventListener("click", toggleTopbarSlim);
+
+    // The two sidebar switches share the generic data-toggle handler above,
+    // which updates state and saves. These add the redraw the generic handler
+    // has no way to know is needed. Registered after it, so state is already
+    // current by the time they run.
+    ["#show-agents-toggle", "#show-hidden-agents-toggle"].forEach(function (sel) {
+      $(sel).addEventListener("click", renderAgents);
+    });
+
+    var grid = $("#palette-grid");
+    grid.addEventListener("click", function (e) {
+      var card = e.target.closest("[data-palette]");
+      if (!card) return;
+      applyPalette(card.dataset.palette);
+      toast(PALETTE_LABEL[state.palette] + " colourway applied");
+    });
+    // Arrow keys move within the radiogroup, which is one tab stop.
+    grid.addEventListener("keydown", function (e) {
+      var keys = ["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp"];
+      if (keys.indexOf(e.key) === -1) return;
+      var cards = $$("[data-palette]", grid);
+      if (!cards.length) return;
+      var at = cards.map(function (c) { return c.dataset.palette; }).indexOf(state.palette);
+      var step = (e.key === "ArrowRight" || e.key === "ArrowDown") ? 1 : -1;
+      var next = cards[((at < 0 ? 0 : at) + step + cards.length) % cards.length];
+      e.preventDefault();
+      applyPalette(next.dataset.palette);
+      next.focus();
+    });
+
+    /* ------------------------------------------------- agent icon uploads */
+
+    $("#agent-form-icon-pick").addEventListener("click", function () {
+      $("#agent-form-icon-file").click();
+    });
+    $("#agent-form-icon-file").addEventListener("change", function () {
+      readAgentIcon(this.files && this.files[0]);
+      // Cleared so that choosing the same file twice still fires a change.
+      this.value = "";
+    });
+    $("#agent-form-icon-clear").addEventListener("click", function () {
+      agentIconDraft = null;
+      renderIconDraft();
+    });
+    // The preview falls back to initials, so it has to follow the name field.
+    $("#agent-form-name").addEventListener("input", renderIconDraft);
+
     // How much of the embedded canvas's own header to hide behind our top bar.
     var crop = $("#embed-crop");
     if (crop) {
@@ -2582,6 +3008,12 @@
       var mod = e.metaKey || e.ctrlKey;
       if (mod && e.key.toLowerCase() === "k") { e.preventDefault(); openPalette(); return; }
       if (mod && e.shiftKey && e.key.toLowerCase() === "o") { e.preventDefault(); newChat(); return; }
+      // Shift + backslash reports as "|" on most layouts but stays "\" on a
+      // few, so both spellings are accepted. Checked before the plain
+      // backslash case, which would otherwise swallow it.
+      if (mod && e.shiftKey && (e.key === "|" || e.key === "\\")) {
+        e.preventDefault(); toggleTopbarSlim(); return;
+      }
       if (mod && e.key === "\\") { e.preventDefault(); toggleSidebar(); return; }
       if (mod && e.key.toLowerCase() === "j") { e.preventDefault(); toggleWorkbench(); return; }
       if (e.key === "Escape") {
@@ -2646,10 +3078,15 @@
   }
 
   function init() {
-    // Paint the stored theme before anything else, so there is no flash.
+    // Paint the stored theme AND colourway before anything else, so there is
+    // no flash. Both have to happen here: painting only the theme would show
+    // the default clay surfaces for a frame before the real colourway landed,
+    // which is exactly the flash this block exists to prevent.
     try {
       var t = localStorage.getItem(THEME_KEY);
       if (t) document.documentElement.setAttribute("data-theme", t);
+      var p = localStorage.getItem(PALETTE_KEY);
+      if (p && PALETTES.indexOf(p) !== -1) document.documentElement.setAttribute("data-palette", p);
     } catch (e) { /* ignore */ }
 
     Store.ready()
@@ -2665,6 +3102,8 @@
       })
       .then(function () {
         applyTheme(state.theme || "light");
+        applyPalette(state.palette || "clay");
+        setTopbarSlim(state.slimTopbar);
         applyEmbedCrop();
         hydrateIcons();
         renderAgentMenu();
