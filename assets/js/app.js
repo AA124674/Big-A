@@ -158,7 +158,14 @@
       tenantId: "",
       scope: "",
       // Legacy Direct Line fallback.
-      tokenEndpoint: ""
+      tokenEndpoint: "",
+      // Claude, direct to the Anthropic API.
+      claudeApiKey: "",
+      claudeModel: "",
+      claudeSystemPrompt: "",
+      claudeMaxTokens: "",
+      claudeTemperature: "",
+      claudeBaseUrl: ""
     },
     artifact: { title: "Untitled document", type: "markdown", source: "" },
     log: []
@@ -229,7 +236,7 @@
           if (typeof conn[k] === "string") state.connection[k] = conn[k];
         });
       }
-      if (["iframe", "m365", "directline", "sso"].indexOf(state.connection.mode) === -1) {
+      if (["iframe", "m365", "directline", "sso", "claude"].indexOf(state.connection.mode) === -1) {
         state.connection.mode = "m365";
       }
 
@@ -292,7 +299,8 @@
 
   var CONN_KEYS = [
     "connectionString", "directConnectUrl", "environmentId", "schemaName",
-    "cloud", "agentType", "clientId", "tenantId", "scope", "tokenEndpoint"
+    "cloud", "agentType", "clientId", "tenantId", "scope", "tokenEndpoint",
+    "claudeApiKey", "claudeModel", "claudeSystemPrompt", "claudeMaxTokens", "claudeTemperature", "claudeBaseUrl"
   ];
 
   /** The settings actually in force for one agent: its overrides over ours. */
@@ -445,6 +453,7 @@
 
   var MODE_LABEL = {
     m365: "Microsoft 365 Agents SDK",
+    claude: "Claude \u00b7 Anthropic API",
     directline: "Legacy \u00b7 Direct Line, native canvas",
     sso: "Legacy \u00b7 Direct Line with single sign-on",
     iframe: "Legacy \u00b7 embedded frame"
@@ -668,6 +677,7 @@
     showPane("chat");
 
     if (conn.mode === "m365") return connectViaAgentsSdk(agent);
+    if (conn.mode === "claude") return connectViaClaude(agent);
 
     var bearerStep = conn.mode === "sso" && global.Connect
       ? global.Connect.acquireToken(conn).then(function (res) {
@@ -779,6 +789,43 @@
       transport: "m365",
       settings: settings,
       getToken: getToken
+    }).catch(function (err) {
+      setStatus("offline", err && err.message);
+      logEvent("Connection failed", err && err.message, "err");
+    });
+  }
+
+  function claudeSettings(agent) {
+    var c = effectiveConn(agent);
+    return {
+      apiKey: c.claudeApiKey,
+      model: c.claudeModel,
+      systemPrompt: c.claudeSystemPrompt,
+      maxTokens: c.claudeMaxTokens,
+      temperature: c.claudeTemperature,
+      baseUrl: c.claudeBaseUrl
+    };
+  }
+
+  /** Claude, direct to the Anthropic API — no sign-in, just an API key. */
+  function connectViaClaude(agent) {
+    var settings = claudeSettings(agent);
+
+    if (!global.AnthropicClient || !global.AnthropicClient.isConfigured(settings)) {
+      setStatus("offline", "Claude connection is not configured yet.");
+      logEvent("Connection settings needed", "Add the Anthropic API key", "warn");
+      Chat.showSetupNeeded(
+        "This chat needs a Claude API key. Open Connection settings and paste in a key from " +
+        "console.anthropic.com \u203A Settings \u203A API keys."
+      );
+      return Promise.resolve();
+    }
+
+    setStatus("connecting");
+
+    return Chat.open(state.activeChat, {
+      transport: "claude",
+      settings: settings
     }).catch(function (err) {
       setStatus("offline", err && err.message);
       logEvent("Connection failed", err && err.message, "err");
@@ -1689,9 +1736,20 @@
     $("#agent-modal-title").textContent = a ? "Edit agent" : "Add an agent";
     $("#agent-save").textContent = a ? "Save changes" : "Add agent";
 
+    syncAgentFormMode();
     renderIconDraft();
     openModal("#agent-modal");
     setTimeout(function () { $("#agent-form-name").focus(); }, 40);
+  }
+
+  /** Claude agents have no Copilot Studio URL, so hide that field for them. */
+  function syncAgentFormMode() {
+    var sel = $("#agent-form-mode");
+    var isClaude = !!(sel && sel.value === "claude");
+    var urlField = $("#agent-form-url-field");
+    var note = $("#agent-form-claude-note");
+    if (urlField) urlField.hidden = isClaude;
+    if (note) note.hidden = !isClaude;
   }
 
   /** Show the staged icon, or the initials that would be used instead. */
@@ -1782,7 +1840,10 @@
           "the full BIG A canvas. It requires an Entra ID single-page application, delegated " +
           "CopilotStudio.Copilots.Invoke permission, admin consent, and user sign-in.",
     sso: "Legacy Direct Line with single sign-on. Use it only for an older agent whose Channels page " +
-         "still exposes a Token Endpoint."
+         "still exposes a Token Endpoint.",
+    claude: "Talks directly to the Anthropic API from this browser, on the same native BIG A canvas as " +
+            "the Agents SDK mode \u2014 saved history, copy buttons, file drops. Needs an Anthropic API " +
+            "key, which is stored only in this browser and sent only to api.anthropic.com."
   };
 
   /** The agent the connection modal is currently editing, or null for global. */
@@ -1795,6 +1856,7 @@
     var needsSdk = mode === "m365";
     var needsLegacy = mode === "directline" || mode === "sso";
     var needsSignIn = mode === "m365" || mode === "sso";
+    var needsClaude = mode === "claude";
 
     // The wrapper is only empty for modes with no fields at all, which no
     // longer happens: the embed mode has its own panel now.
@@ -1803,6 +1865,11 @@
     $("#conn-legacy-fields").hidden = !needsLegacy;
     $("#conn-signin-fields").hidden = !needsSignIn;
     $("#conn-iframe-fields").hidden = mode !== "iframe";
+    var claudeFields = $("#conn-claude-fields");
+    if (claudeFields) claudeFields.hidden = !needsClaude;
+    var claudeAdv = $("#conn-claude-advanced");
+    if (claudeAdv) claudeAdv.hidden = !needsClaude;
+    if (needsClaude) syncClaudeModelField();
 
     // Only nag for the environment ID when it is actually unobtainable from
     // the URL, which is exactly the default-environment case.
@@ -1823,8 +1890,9 @@
       }
     }
     // Advanced settings only mean anything to the two direct transports.
+    // Claude has its own "Optional settings" block instead (#conn-claude-advanced above).
     var adv = $("#conn-advanced");
-    if (adv) adv.hidden = mode === "iframe";
+    if (adv) adv.hidden = mode === "iframe" || needsClaude;
 
     // Number the visible steps, so "Step 2" is always the second thing seen.
     var signInNo = $("#conn-signin-no");
@@ -1983,8 +2051,51 @@
       agentType: $("#conn-agent-type").value,
       clientId: $("#conn-client-id").value.trim(),
       tenantId: $("#conn-tenant-id").value.trim(),
-      scope: $("#conn-scope").value.trim()
+      scope: $("#conn-scope").value.trim(),
+      claudeApiKey: $("#conn-claude-key").value.trim(),
+      claudeModel: readClaudeModel(),
+      claudeSystemPrompt: $("#conn-claude-system").value.trim(),
+      claudeMaxTokens: $("#conn-claude-max-tokens").value.trim(),
+      claudeTemperature: $("#conn-claude-temperature").value.trim(),
+      claudeBaseUrl: $("#conn-claude-base-url").value.trim()
     };
+  }
+
+  /** The model select doubles as a "Custom model ID…" escape hatch. */
+  function readClaudeModel() {
+    var sel = $("#conn-claude-model");
+    if (!sel) return "";
+    if (sel.value === "__custom") {
+      var custom = $("#conn-claude-model-custom");
+      return custom ? custom.value.trim() : "";
+    }
+    return sel.value;
+  }
+
+  /** Show the free-text model box only when "Custom model ID…" is picked. */
+  function syncClaudeModelField() {
+    var sel = $("#conn-claude-model");
+    var custom = $("#conn-claude-model-custom");
+    if (!sel || !custom) return;
+    custom.hidden = sel.value !== "__custom";
+  }
+
+  /** Reverse of readClaudeModel(): put a stored model id back into the form. */
+  function setClaudeModelSelect(value) {
+    var sel = $("#conn-claude-model");
+    var custom = $("#conn-claude-model-custom");
+    if (!sel) return;
+    if (!value) {
+      sel.selectedIndex = 0;
+      if (custom) custom.value = "";
+    } else if ($$("option", sel).some(function (o) { return o.value === value; })) {
+      sel.value = value;
+      if (custom) custom.value = "";
+    } else {
+      sel.value = "__custom";
+      if (custom) custom.value = value;
+    }
+    syncClaudeModelField();
   }
 
   /**
@@ -2086,6 +2197,18 @@
     $("#conn-client-id").value = c.clientId || "";
     $("#conn-tenant-id").value = c.tenantId || "";
     $("#conn-scope").value = c.scope || "";
+    var claudeKey = $("#conn-claude-key");
+    claudeKey.value = c.claudeApiKey || "";
+    claudeKey.type = "password";
+    var claudeKeyToggle = $("#conn-claude-key-toggle");
+    if (claudeKeyToggle) claudeKeyToggle.textContent = "Show";
+    setClaudeModelSelect(c.claudeModel || "");
+    $("#conn-claude-system").value = c.claudeSystemPrompt || "";
+    $("#conn-claude-max-tokens").value = c.claudeMaxTokens || "";
+    $("#conn-claude-temperature").value = c.claudeTemperature || "";
+    $("#conn-claude-base-url").value = c.claudeBaseUrl || "";
+    var claudeResolved = $("#conn-claude-resolved");
+    if (claudeResolved) claudeResolved.textContent = "";
     var redirect = location.origin + location.pathname;
     $("#conn-redirect").textContent = redirect;
     $("#conn-redirect-legacy").textContent = redirect;
@@ -2158,6 +2281,33 @@
       logEvent("Connection test passed", global.M365Agents.baseUrl(s), "ok");
     }).catch(function (err) {
       $("#conn-resolved").textContent = err.message;
+      toast(err.message, "err");
+      logEvent("Connection test failed", err.message, "err");
+    }).then(function () {
+      btn.disabled = false;
+      btn.textContent = was;
+    });
+  }
+
+  /** Same idea as testConnection(), for the Claude transport's own key + model. */
+  function testClaudeConnection() {
+    var btn = $("#conn-claude-test");
+    var s = readConnForm();
+    var settings = { apiKey: s.claudeApiKey, model: s.claudeModel, baseUrl: s.claudeBaseUrl };
+    if (!global.AnthropicClient || !global.AnthropicClient.isConfigured(settings)) {
+      toast("Add your API key and choose a model first.", "err");
+      return;
+    }
+    btn.disabled = true;
+    var was = btn.textContent;
+    btn.textContent = "Testing…";
+
+    global.AnthropicClient.testConnection(settings).then(function () {
+      $("#conn-claude-resolved").textContent = "Connected. Claude answered successfully.";
+      toast("Connection works");
+      logEvent("Connection test passed", settings.model, "ok");
+    }).catch(function (err) {
+      $("#conn-claude-resolved").textContent = err.message;
       toast(err.message, "err");
       logEvent("Connection test failed", err.message, "err");
     }).then(function () {
@@ -2293,6 +2443,16 @@
         return;
       }
     }
+    if (mode === "claude") {
+      if (!form.claudeApiKey) {
+        toast("Add your Anthropic API key.", "err");
+        return;
+      }
+      if (!form.claudeModel) {
+        toast("Choose a model, or enter a custom model ID.", "err");
+        return;
+      }
+    }
 
     var next = {
       mode: mode,
@@ -2305,7 +2465,13 @@
       tokenEndpoint: endpoint,
       clientId: form.clientId,
       tenantId: form.tenantId,
-      scope: form.scope
+      scope: form.scope,
+      claudeApiKey: form.claudeApiKey,
+      claudeModel: form.claudeModel,
+      claudeSystemPrompt: form.claudeSystemPrompt,
+      claudeMaxTokens: form.claudeMaxTokens,
+      claudeTemperature: form.claudeTemperature,
+      claudeBaseUrl: form.claudeBaseUrl
     };
 
     var sel = $("#conn-target");
@@ -2397,41 +2563,58 @@
 
   function saveAgent() {
     var name = $("#agent-form-name").value.trim();
+    var modeSel = $("#agent-form-mode");
+    var mode = modeSel ? modeSel.value : "";
+    // Claude talks straight to the Anthropic API, so there is no Copilot
+    // Studio address to require or extract here — that agent's credentials
+    // live in Connection settings instead, same as an Agents SDK agent's
+    // Entra details do.
+    var isClaude = mode === "claude";
+
     var raw = $("#agent-form-url").value.trim();
     // Copilot Studio hands out a whole HTML document, so accept that too and
     // keep only the address from inside it.
-    var url = A.extractUrl(raw);
-    if (!name || !raw) { toast("Give the agent a name and a URL.", "err"); return; }
-    if (!url) {
-      toast("No https:// address found. Paste the agent URL, or the whole embed code.", "err");
-      return;
+    var url = isClaude ? "" : A.extractUrl(raw);
+    if (!name) { toast("Give the agent a name.", "err"); return; }
+    if (!isClaude) {
+      if (!raw) { toast("Give the agent a name and a URL.", "err"); return; }
+      if (!url) {
+        toast("No https:// address found. Paste the agent URL, or the whole embed code.", "err");
+        return;
+      }
+      if (url !== raw) $("#agent-form-url").value = url;
     }
-    if (url !== raw) $("#agent-form-url").value = url;
 
     var desc = $("#agent-form-desc").value.trim();
-    var modeSel = $("#agent-form-mode");
-    var mode = modeSel ? modeSel.value : "";
 
     /* ---- editing an agent that already exists ---- */
     var existing = agentEditing ? agentById(agentEditing) : null;
     if (existing) {
-      var urlChanged = existing.url !== url;
+      var prevMode = (existing.conn && existing.conn.mode) || "";
+      var urlChanged = false;
       existing.name = name;
-      existing.url = url;
+      // Leave a Claude-bound agent's stored URL alone rather than blanking
+      // it — switching back to Copilot Studio mode later should not require
+      // pasting the address again.
+      if (!isClaude) {
+        urlChanged = existing.url !== url;
+        existing.url = url;
+      }
       existing.desc = desc;
       // A cleared picture must remove the stored one, so this is assigned
       // unconditionally rather than only when a new file was chosen.
       if (agentIconDraft) existing.icon = agentIconDraft;
       else delete existing.icon;
       // Only the mode is touched here. The rest of an agent's connection
-      // record (endpoints, ids) belongs to the connection modal and must
-      // survive a rename.
+      // record (endpoints, ids, the Claude API key) belongs to the
+      // connection modal and must survive a rename.
       if (mode) {
         existing.conn = existing.conn || {};
         existing.conn.mode = mode;
       } else if (existing.conn) {
         delete existing.conn.mode;
       }
+      var modeChanged = ((existing.conn && existing.conn.mode) || "") !== prevMode;
       agentEditing = null;
       agentIconDraft = null;
       savePrefs();
@@ -2440,9 +2623,10 @@
       renderAgentAvatar();
       closeModals();
       toast("Saved " + name);
-      // Changing where an agent points has to take effect now; a rename alone
-      // does not justify tearing down a live conversation.
-      if (urlChanged && existing.id === state.activeAgent) connectActiveChat();
+      // Changing where an agent points, or how it connects, has to take
+      // effect now; a rename alone does not justify tearing down a live
+      // conversation.
+      if ((urlChanged || modeChanged) && existing.id === state.activeAgent) connectActiveChat();
       return;
     }
 
@@ -2843,6 +3027,19 @@
     $("#conn-signin-redirect").addEventListener("click", function () { connectSignIn(true); });
     $("#conn-test").addEventListener("click", testConnection);
     $("#conn-diagnose").addEventListener("click", runDiagnostics);
+    var claudeModelSel = $("#conn-claude-model");
+    if (claudeModelSel) claudeModelSel.addEventListener("change", syncClaudeModelField);
+    var claudeKeyToggle = $("#conn-claude-key-toggle");
+    if (claudeKeyToggle) {
+      claudeKeyToggle.addEventListener("click", function () {
+        var input = $("#conn-claude-key");
+        var show = input.type === "password";
+        input.type = show ? "text" : "password";
+        this.textContent = show ? "Hide" : "Show";
+      });
+    }
+    var claudeTest = $("#conn-claude-test");
+    if (claudeTest) claudeTest.addEventListener("click", testClaudeConnection);
     ["#conn-env-id", "#conn-legacy-env-id", "#conn-schema", "#conn-cloud",
       "#conn-agent-type", "#conn-direct-url"].forEach(function (sel) {
       $(sel).addEventListener("change", syncConnFields);
@@ -2934,6 +3131,9 @@
     });
     // The preview falls back to initials, so it has to follow the name field.
     $("#agent-form-name").addEventListener("input", renderIconDraft);
+    // Claude agents need no URL field; toggle it the moment the mode changes.
+    var agentModeSel = $("#agent-form-mode");
+    if (agentModeSel) agentModeSel.addEventListener("change", syncAgentFormMode);
 
     // How much of the embedded canvas's own header to hide behind our top bar.
     var crop = $("#embed-crop");

@@ -1,33 +1,42 @@
 # BIG A
 
-A static, single-page front end for a Microsoft Copilot Studio agent. It is
-plain HTML, CSS and JavaScript — no build step, no framework, no server, no
-dependencies. Drop the folder into a GitHub Pages repository and it runs.
+A static, single-page front end for a Microsoft Copilot Studio agent — or for
+Claude, talked to directly. It is plain HTML, CSS and JavaScript — no build
+step, no framework, no server, no dependencies. Drop the folder into a GitHub
+Pages repository and it runs.
 
 ## Start here: which mode should I use?
 
-**Microsoft 365 Agents SDK is the default and recommended mode.** Newer
-Copilot Studio agents expose an Agents SDK connection string and do not expose
-an anonymous Direct Line Token Endpoint. The Agents SDK mode keeps BIG A's
-native, copyable, saved chat canvas, but requires Entra ID user sign-in.
+**Microsoft 365 Agents SDK is the default and recommended mode for a Copilot
+Studio agent.** Newer Copilot Studio agents expose an Agents SDK connection
+string and do not expose an anonymous Direct Line Token Endpoint. The Agents
+SDK mode keeps BIG A's native, copyable, saved chat canvas, but requires Entra
+ID user sign-in.
+
+**Claude is a separate, first-class mode**, for talking to a Claude model
+instead of a Copilot Studio agent. It uses the same native canvas — saved
+history, streaming, copy buttons, file drops — but calls the Anthropic API
+directly from this browser with your own API key, so it needs no Entra
+registration and no agent to publish.
 
 | Mode | Setup needed | Notes |
 | --- | --- | --- |
 | **Microsoft 365 Agents SDK** (default) | Agents SDK connection string and an Entra single-page application | Uses the authenticated Direct-to-Engine protocol. Requires delegated `CopilotStudio.Copilots.Invoke`, admin consent, and user sign-in. |
+| **Claude** | An Anthropic API key | Talks to the Anthropic API directly from this browser. No Copilot Studio agent, no Entra app, no sign-in — just a key. |
 | **Legacy embed (iframe)** | None | Uses Copilot Studio's canvas in a frame. BIG A cannot style, read, copy, search, or save the messages inside it. |
 | **Legacy Direct Line canvas** | A Token Endpoint shown by Copilot Studio | Only for older anonymous agents. It is unavailable if the Channels page does not show a Token Endpoint. |
 | **Legacy Direct Line with single sign-on** | Token Endpoint and Entra setup | Retained for older agents that still expose Direct Line. |
 
 ### Why the mode matters
 
-The Agents SDK and legacy Direct Line modes render every message in BIG A. This
-enables per-message copy buttons, saved local history, themes, the workbench,
-and search. The iframe loads another origin, so the browser prevents BIG A from
-reading or changing its contents.
+The Agents SDK, Claude, and legacy Direct Line modes render every message in
+BIG A. This enables per-message copy buttons, saved local history, themes, the
+workbench, and search. The iframe loads another origin, so the browser
+prevents BIG A from reading or changing its contents.
 
-Modes are stored per agent. One older agent can use Direct Line while a current
-agent uses the Agents SDK. Set the mode when adding an agent or in **Connection
-settings**.
+Modes are stored per agent. One agent can talk to Claude while another uses
+the Agents SDK, or legacy Direct Line. Set the mode when adding an agent or in
+**Connection settings**.
 
 ## Adding an agent
 
@@ -37,6 +46,10 @@ In the URL box you can paste **either** the plain address **or** the entire
 embed code that Copilot Studio gives you. The `<iframe>` wrapper is stripped
 automatically and only the address is kept, so there is no need to hunt for the
 `src` by hand.
+
+Choosing **Claude** as the mode hides the URL box — there is no Copilot Studio
+address for it. Save the agent, then open its **Connection settings** to add
+an API key and pick a model.
 
 ## Setup: the Microsoft 365 Agents SDK
 
@@ -114,6 +127,50 @@ when adding the agent, or later via **This agent only** in Connection settings.
 
 The Agents SDK talks to the **published** agent. Unpublished changes will not
 appear, and an unpublished agent returns a 404.
+
+## Setup: Claude, direct to the Anthropic API
+
+This is the whole setup, and it is much shorter than the Agents SDK's:
+
+1. **Settings → Add an agent** (or **Connection settings** for an existing
+   one). Give it a name and set **How this agent connects** to **Claude**.
+2. Save the agent, then open its **Connection settings**.
+3. Paste an API key from
+   [console.anthropic.com → Settings → API keys](https://console.anthropic.com/settings/keys).
+4. Pick a model — Claude Sonnet 5 is a reasonable default — and optionally add
+   a system prompt to give this agent a persona or instructions, the way a
+   Copilot Studio agent's own configuration would.
+5. **Test connection**, then **Save & connect**.
+
+That is it: no Entra registration, no admin consent, no publishing step, and
+no sign-in. Requests go straight from this browser to `api.anthropic.com`
+using the Messages API's own opt-in browser-access header (see Anthropic's
+API docs for `anthropic-dangerous-direct-browser-access`), carrying the key
+with every request. That trade-off is why the Connection settings panel says
+it plainly: anyone with access to this browser can read the key back out of
+its network requests, so use a key scoped to a low spending limit rather than
+a personal or organisation-wide one.
+
+**What carries over from Copilot Studio, and what does not:**
+
+- **History is permanent**, the same as every other mode — it lives in this
+  browser's local storage, not on Anthropic's servers. Because the Messages
+  API itself is stateless, BIG A resends the visible transcript with every
+  turn, rebuilt fresh from that local history each time the chat is opened.
+- **Images and PDFs attach natively.** Anything Claude can read directly is
+  sent as a real image or document, not just described. Other file types
+  that BIG A can extract text from (code, CSV, JSON, plain text, and
+  similar) are inlined as text, the same as the Agents SDK mode does; a
+  handful of binary formats it cannot read either way (`.docx`, `.zip`, and
+  so on) show up to Claude only as a note that a file was attached.
+- **No server-side tools yet.** Copilot Studio's web search, and anything
+  else configured on the agent side, has no equivalent here — this mode is
+  plain conversation with Claude, nothing more.
+- **The optional settings are optional for a reason.** Leave the model's
+  default temperature and max tokens alone unless there is a specific need
+  to change them; the current generation of Claude models (Sonnet 5, Opus 5,
+  Fable 5) reject a non-default temperature outright, so that box only does
+  anything on an older model such as Haiku 4.5.
 
 ## Troubleshooting
 
@@ -198,21 +255,31 @@ These are real constraints, not oversights:
   **The fix is to not use the frame.** The default Agents SDK mode and the
   legacy Direct Line mode draw the conversation themselves and therefore have
   none of these restrictions. The frame remains available as a fallback.
-- **Web search, charts and tools are agent-side features.** BIG A renders their
-  output and reports their progress, but cannot switch them on — configure
-  those in Copilot Studio.
+- **Web search, charts and tools are agent-side features of Copilot Studio.**
+  BIG A renders their output and reports their progress, but cannot switch
+  them on — configure those in Copilot Studio. The Claude mode has no
+  equivalent yet either; it is plain conversation, with no server-side tools.
 - **Conversations expire server-side** after a period of inactivity. Your
   transcript is kept locally forever and always displayed, but once a
   conversation has expired the *agent* no longer remembers those earlier turns.
   BIG A opens a fresh conversation automatically and replays the turn you were
-  sending, so you will not lose a message.
+  sending, so you will not lose a message. (This does not apply to the Claude
+  mode: there is no server-side conversation to expire, since the whole
+  visible transcript is resent on every turn.)
+- **Claude attachments are capped at 5 MB each**, and are re-sent — re-read
+  from local storage and re-uploaded — on every later turn of the same chat,
+  since the Messages API has no memory of its own between requests. Long
+  conversations with several large images or PDFs will therefore use more
+  bandwidth and tokens per turn as they grow.
 
 ## Where your data lives
 
-Everything — chats, the full message transcript, projects and attachments — is
-stored **on your machine** in IndexedDB, under the origin the site is served
-from. Nothing is sent anywhere except the messages you send to your agent, and
-the connection settings never leave the browser.
+Everything — chats, the full message transcript, projects, attachments, and
+any Claude API key you add — is stored **on your machine** in IndexedDB,
+under the origin the site is served from. Nothing is sent anywhere except the
+messages you send to your agent (and, for the Claude mode, straight to
+`api.anthropic.com`); connection settings, including the API key, never leave
+the browser except in that outgoing request.
 
 That means transcripts survive page closure, browser restart and machine
 shutdown. It also means they are per-browser and per-device. To move a
@@ -267,7 +334,7 @@ policy as a real header, which additionally covers `frame-ancestors` and
 `sandbox` (both ignored in a meta policy):
 
 ```
-Content-Security-Policy: default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://unpkg.com https://cdn.botframework.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' blob: https://login.microsoftonline.com https://login.microsoftonline.us https://login.partner.microsoftonline.cn https://*.environment.api.powerplatform.com https://*.environment.api.preprod.powerplatform.com https://*.environment.api.gov.powerplatform.microsoft.us https://*.environment.api.high.powerplatform.microsoft.us https://*.environment.api.appsplatform.us https://*.environment.api.powerplatform.partner.microsoftonline.cn https://*.api.powerplatform.com https://powerva.microsoft.com https://*.powerva.microsoft.com https://copilotstudio.microsoft.com https://directline.botframework.com https://*.directline.botframework.com https://*.botframework.com https://*.blob.core.windows.net https://cdn.jsdelivr.net https://unpkg.com https://cdn.botframework.com wss://directline.botframework.com wss://*.directline.botframework.com; frame-src 'self' blob: https://copilotstudio.microsoft.com https://powerva.microsoft.com https://*.powerva.microsoft.com https://*.powervirtualagents.com https://*.botframework.com https://*.blob.core.windows.net; media-src 'self' blob: https:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'
+Content-Security-Policy: default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://unpkg.com https://cdn.botframework.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' blob: https://api.anthropic.com https://login.microsoftonline.com https://login.microsoftonline.us https://login.partner.microsoftonline.cn https://*.environment.api.powerplatform.com https://*.environment.api.preprod.powerplatform.com https://*.environment.api.gov.powerplatform.microsoft.us https://*.environment.api.high.powerplatform.microsoft.us https://*.environment.api.appsplatform.us https://*.environment.api.powerplatform.partner.microsoftonline.cn https://*.api.powerplatform.com https://powerva.microsoft.com https://*.powerva.microsoft.com https://copilotstudio.microsoft.com https://directline.botframework.com https://*.directline.botframework.com https://*.botframework.com https://*.blob.core.windows.net https://cdn.jsdelivr.net https://unpkg.com https://cdn.botframework.com wss://directline.botframework.com wss://*.directline.botframework.com; frame-src 'self' blob: https://copilotstudio.microsoft.com https://powerva.microsoft.com https://*.powerva.microsoft.com https://*.powervirtualagents.com https://*.botframework.com https://*.blob.core.windows.net; media-src 'self' blob: https:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'
 ```
 
 A single-tenant deployment can narrow it further. If only the BGS environment is
@@ -286,6 +353,10 @@ Two consequences are worth knowing before editing it:
   in `frame-src`. Framing a third-party canvas needs its host added there.
 - If the CDN mirrors are removed from `script-src`, a vendored
   `assets/vendor/msal-browser.min.js` becomes mandatory.
+- If the Claude mode is never used, `https://api.anthropic.com` can be
+  removed from `connect-src` too. Pointing the Claude mode's optional
+  **API base URL** at a compatible proxy instead of Anthropic's own API
+  needs that proxy's host added here, or the browser blocks it.
 
 ## Keyboard
 
@@ -374,6 +445,7 @@ without a picture keep their initials on a stable, name-derived tint.
 | `assets/css/styles.css` | The whole design system |
 | `assets/js/store.js` | IndexedDB persistence, backup and restore |
 | `assets/js/m365agents.js` | **Microsoft 365 Agents SDK / Direct-to-Engine client** — current transport |
+| `assets/js/anthropic.js` | **Claude client** — talks to the Anthropic Messages API directly |
 | `assets/js/directline.js` | Direct Line 3.0 client — legacy transport, kept as a fallback |
 | `assets/js/connect.js` | MSAL sign-in, shared by both authenticated transports |
 | `assets/js/chat.js` | The conversation surface, streaming, previews and composer |
@@ -406,6 +478,18 @@ response header. Partial answers arrive as `typing` activities whose
 `channelData.streamType` is `informative` (progress notices such as "Searching
 the web") or `streaming` (partial answer text), followed by a final `message`.
 BIG A handles both cumulative and incremental chunking.
+
+**Claude** is unrelated to the above: it is one `POST {base}/v1/messages` per
+turn, `stream: true`, with `x-api-key`, `anthropic-version` and
+`anthropic-dangerous-direct-browser-access` headers, answered with the
+Messages API's own SSE event stream (`content_block_delta` etc.) rather than
+Bot Framework activities. `assets/js/anthropic.js` translates that stream into
+the same `typing` / `message` activity shape the two Copilot Studio transports
+produce, which is what lets `chat.js` render all three without knowing which
+one is live. Because the Messages API holds no server-side conversation state,
+there is no equivalent of `x-ms-conversationid` to resume — the whole
+transcript is rebuilt from local storage and resent each time the chat opens,
+then extended turn by turn in memory as replies stream back.
 
 ## Deploying to GitHub Pages
 

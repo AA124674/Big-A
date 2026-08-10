@@ -8,11 +8,13 @@
      hosts that can send it.
 
      connect-src and frame-src are enumerated rather than a blanket `https:`,
-     so a bearer token cannot be posted to an origin outside Microsoft sign-in,
-     the Power Platform environment APIs, Direct Line and the attachment hosts
-     those services actually use. A legacy "iframe" embed pointing at a
-     non-Microsoft canvas needs its host added to frame-src. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://unpkg.com https://cdn.botframework.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' blob: https://login.microsoftonline.com https://login.microsoftonline.us https://login.partner.microsoftonline.cn https://*.environment.api.powerplatform.com https://*.environment.api.preprod.powerplatform.com https://*.environment.api.gov.powerplatform.microsoft.us https://*.environment.api.high.powerplatform.microsoft.us https://*.environment.api.appsplatform.us https://*.environment.api.powerplatform.partner.microsoftonline.cn https://*.api.powerplatform.com https://powerva.microsoft.com https://*.powerva.microsoft.com https://copilotstudio.microsoft.com https://directline.botframework.com https://*.directline.botframework.com https://*.botframework.com https://*.blob.core.windows.net https://cdn.jsdelivr.net https://unpkg.com https://cdn.botframework.com wss://directline.botframework.com wss://*.directline.botframework.com; frame-src 'self' blob: https://copilotstudio.microsoft.com https://powerva.microsoft.com https://*.powerva.microsoft.com https://*.powervirtualagents.com https://*.botframework.com https://*.blob.core.windows.net; media-src 'self' blob: https:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'">
+     so a bearer token or API key cannot be posted to an origin outside
+     Microsoft sign-in, the Power Platform environment APIs, Direct Line,
+     the Anthropic API and the attachment hosts those services actually use.
+     A legacy "iframe" embed pointing at a non-Microsoft canvas needs its
+     host added to frame-src; a Claude-compatible proxy other than
+     api.anthropic.com needs its host added to connect-src. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://unpkg.com https://cdn.botframework.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' blob: https://api.anthropic.com https://login.microsoftonline.com https://login.microsoftonline.us https://login.partner.microsoftonline.cn https://*.environment.api.powerplatform.com https://*.environment.api.preprod.powerplatform.com https://*.environment.api.gov.powerplatform.microsoft.us https://*.environment.api.high.powerplatform.microsoft.us https://*.environment.api.appsplatform.us https://*.environment.api.powerplatform.partner.microsoftonline.cn https://*.api.powerplatform.com https://powerva.microsoft.com https://*.powerva.microsoft.com https://copilotstudio.microsoft.com https://directline.botframework.com https://*.directline.botframework.com https://*.botframework.com https://*.blob.core.windows.net https://cdn.jsdelivr.net https://unpkg.com https://cdn.botframework.com wss://directline.botframework.com wss://*.directline.botframework.com; frame-src 'self' blob: https://copilotstudio.microsoft.com https://powerva.microsoft.com https://*.powerva.microsoft.com https://*.powervirtualagents.com https://*.botframework.com https://*.blob.core.windows.net; media-src 'self' blob: https:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
 <title>BIG A — your intelligent workspace</title>
@@ -545,7 +547,7 @@
       <label for="agent-form-name">Display name</label>
       <input type="text" id="agent-form-name" placeholder="e.g. HR Assistant">
     </div>
-    <div class="field">
+    <div class="field" id="agent-form-url-field">
       <label for="agent-form-url">Agent URL or embed code</label>
       <!-- Deliberately type="text", not type="url": the whole point is that a
            pasted block of embed HTML is accepted, and a url field would mark
@@ -563,11 +565,15 @@
       <select id="agent-form-mode">
         <option value="">Use the workspace default</option>
         <option value="m365">Recommended: Microsoft 365 Agents SDK</option>
+        <option value="claude">Claude &mdash; direct to the Anthropic API</option>
         <option value="directline">Legacy: BIG A canvas (Token Endpoint required)</option>
         <option value="iframe">Legacy: Copilot Studio's own canvas in a frame</option>
       </select>
       <div class="hint">Set per agent, so one agent can use the full client while another stays on
         a legacy transport. Changeable later in Connection settings.</div>
+      <p class="hint" id="agent-form-claude-note" hidden>Claude agents talk straight to the Anthropic
+        API, so there is no Copilot Studio address to paste. Save this agent, then open its
+        <strong>Connection settings</strong> to add an API key and pick a model.</p>
     </div>
     <div class="field">
       <label for="agent-form-desc">Description (optional)</label>
@@ -858,6 +864,7 @@
       <label for="conn-mode">How this page reaches the agent</label>
       <select id="conn-mode">
         <option value="m365">Recommended: Microsoft 365 Agents SDK (requires Entra setup)</option>
+        <option value="claude">Claude &mdash; direct to the Anthropic API (requires an API key)</option>
         <option value="directline">Legacy: BIG A canvas (Token Endpoint required)</option>
         <option value="iframe">Legacy: Copilot Studio's own canvas in a frame</option>
         <option value="sso">Legacy: BIG A canvas with single sign-on</option>
@@ -912,6 +919,91 @@
           <code>Default-&hellip;</code> value; the prefix is required.
         </p>
         <p class="hint conn-target-line" id="conn-resolved"></p>
+      </section>
+
+      <!-- ============ Claude, direct to the Anthropic API ============ -->
+      <section class="conn-step" id="conn-claude-fields" hidden>
+        <header class="conn-step-head">
+          <span class="conn-step-no">1</span>
+          <span class="conn-step-title">
+            <strong>Add your Anthropic API key</strong>
+            <small>Required. Requests go straight from this browser to api.anthropic.com &mdash;
+              there is no server in between, so nothing but your messages ever leaves this device.</small>
+          </span>
+        </header>
+
+        <div class="field">
+          <label for="conn-claude-key">API key</label>
+          <input type="password" id="conn-claude-key" spellcheck="false" autocomplete="off"
+                 placeholder="sk-ant-api03-&hellip;">
+          <div class="conn-inline-acts">
+            <button class="btn btn-ghost btn-sm" id="conn-claude-key-toggle" type="button">Show</button>
+          </div>
+          <p class="hint">Create a key at <a href="https://console.anthropic.com/settings/keys"
+            target="_blank" rel="noopener">console.anthropic.com &rsaquo; Settings &rsaquo; API keys</a>.
+            Anyone with access to this browser can read the key back out of its network requests, so use
+            one scoped to a low spending limit rather than a personal or organisation-wide key.</p>
+        </div>
+
+        <div class="field">
+          <label for="conn-claude-model">Model</label>
+          <select id="conn-claude-model">
+            <optgroup label="Current">
+              <option value="claude-sonnet-5">Claude Sonnet 5 &mdash; balanced, the default</option>
+              <option value="claude-opus-5">Claude Opus 5 &mdash; most capable for complex work</option>
+              <option value="claude-fable-5">Claude Fable 5 &mdash; highest available capability</option>
+              <option value="claude-haiku-4-5">Claude Haiku 4.5 &mdash; fastest and cheapest</option>
+            </optgroup>
+            <optgroup label="Legacy">
+              <option value="claude-opus-4-8">Claude Opus 4.8</option>
+              <option value="claude-sonnet-4-6">Claude Sonnet 4.6</option>
+            </optgroup>
+            <option value="__custom">Custom model ID&hellip;</option>
+          </select>
+          <input type="text" id="conn-claude-model-custom" spellcheck="false" hidden placeholder="claude-&hellip;">
+          <p class="hint">Any current model works here. Choose <strong>Custom model ID</strong> to type
+            one that is not listed yet &mdash; a new release, or an older snapshot to pin.</p>
+        </div>
+
+        <div class="field">
+          <label for="conn-claude-system">System prompt (optional)</label>
+          <textarea id="conn-claude-system" rows="3" spellcheck="true"
+                    placeholder="You are a helpful assistant for..."></textarea>
+          <p class="hint">Sets this agent&rsquo;s persona and instructions, the same role a Copilot Studio
+            agent&rsquo;s own configuration plays. Leave it blank for plain Claude.</p>
+        </div>
+
+        <div class="conn-actions">
+          <button class="btn btn-ghost btn-sm" id="conn-claude-test" type="button">Test connection</button>
+        </div>
+        <p class="hint conn-target-line" id="conn-claude-resolved"></p>
+
+        <details class="setup-help" id="conn-claude-advanced">
+          <summary>Optional settings &mdash; you almost certainly do not need these</summary>
+
+          <div class="field-row">
+            <div class="field">
+              <label for="conn-claude-max-tokens">Max output tokens</label>
+              <input type="text" id="conn-claude-max-tokens" spellcheck="false" placeholder="4096">
+              <p class="hint">Upper bound on each reply. Higher costs more and can take longer; current
+                models allow up to 128,000.</p>
+            </div>
+            <div class="field">
+              <label for="conn-claude-temperature">Temperature</label>
+              <input type="text" id="conn-claude-temperature" spellcheck="false" placeholder="Default">
+              <p class="hint">Leave blank for the model&rsquo;s default. The current generation of models
+                reject any value here; it only takes effect on older models such as Haiku&nbsp;4.5.</p>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="conn-claude-base-url">API base URL</label>
+            <input type="text" id="conn-claude-base-url" spellcheck="false" placeholder="https://api.anthropic.com">
+            <p class="hint">Only change this to point at a compatible proxy. A non-default host must also
+              be added to <code>connect-src</code> in the Content Security Policy in
+              <code>index.html</code>, or the browser will block it.</p>
+          </div>
+        </details>
       </section>
 
       <!-- ============ Step 2: sign in (required) ============ -->
@@ -1208,6 +1300,7 @@
 <script src="assets/js/store.js"></script>
 <script src="assets/js/directline.js"></script>
 <script src="assets/js/m365agents.js"></script>
+<script src="assets/js/anthropic.js"></script>
 <script src="assets/js/connect.js"></script>
 <script src="assets/js/chat.js"></script>
 <script src="assets/js/app.js"></script>

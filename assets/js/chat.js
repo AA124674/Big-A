@@ -875,7 +875,9 @@
     opts = opts || {};
     lastConnectOpts = opts;
     var chat = opts.chat || {};
-    var transport = opts.transport === "directline" ? "directline" : "m365";
+    var transport = opts.transport === "directline" ? "directline"
+      : opts.transport === "claude" ? "claude"
+      : "m365";
 
     if (client) { try { client.end(); } catch (e) { noop(); } client = null; }
     finishStream();
@@ -884,14 +886,16 @@
     setStatus("connecting");
     els.error.hidden = true;
 
-    var attempt = transport === "m365"
-      ? connectM365(opts, chat)
+    var attempt = transport === "m365" ? connectM365(opts, chat)
+      : transport === "claude" ? connectClaude(opts, chat)
       : connectDirectLine(opts, chat);
 
     return attempt.then(function (c) {
       client = c;
       setStatus("online", transport === "m365"
         ? "Microsoft 365 Agents SDK · Direct-to-Engine"
+        : transport === "claude"
+        ? "Claude · Anthropic API"
         : "Direct Line 3.0");
       els.composer.classList.remove("disabled");
       els.input.disabled = false;
@@ -926,6 +930,25 @@
       onStatus: function (s) {
         if (s === "online") setStatus("online");
         else if (s === "idle") { showTyping(false); setStatus("online"); }
+        else if (s === "reconnecting") setStatus("reconnecting");
+        else setStatus("connecting");
+      },
+      onError: function (e) { if (hooks.onToast) hooks.onToast(e.message, "err"); }
+    });
+  }
+
+  /** Claude, direct to the Anthropic API — no server-side conversation to resume. */
+  function connectClaude(opts, chat) {
+    if (!global.AnthropicClient) {
+      return Promise.reject(new Error("The Claude transport failed to load."));
+    }
+    return global.AnthropicClient.connect({
+      settings: opts.settings || {},
+      chatId: chatId,
+      agentName: (agent && agent.name) || "Claude",
+      onActivity: handleActivity,
+      onStatus: function (s) {
+        if (s === "online") setStatus("online");
         else if (s === "reconnecting") setStatus("reconnecting");
         else setStatus("connecting");
       },
