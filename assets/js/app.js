@@ -165,7 +165,14 @@
       claudeSystemPrompt: "",
       claudeMaxTokens: "",
       claudeTemperature: "",
-      claudeBaseUrl: ""
+      claudeBaseUrl: "",
+      // Gemini, direct to Google's free-tier API.
+      geminiApiKey: "",
+      geminiModel: "",
+      geminiSystemPrompt: "",
+      geminiMaxTokens: "",
+      geminiTemperature: "",
+      geminiBaseUrl: ""
     },
     artifact: { title: "Untitled document", type: "markdown", source: "" },
     log: []
@@ -236,7 +243,7 @@
           if (typeof conn[k] === "string") state.connection[k] = conn[k];
         });
       }
-      if (["iframe", "m365", "directline", "sso", "claude"].indexOf(state.connection.mode) === -1) {
+      if (["iframe", "m365", "directline", "sso", "claude", "gemini"].indexOf(state.connection.mode) === -1) {
         state.connection.mode = "m365";
       }
 
@@ -300,7 +307,8 @@
   var CONN_KEYS = [
     "connectionString", "directConnectUrl", "environmentId", "schemaName",
     "cloud", "agentType", "clientId", "tenantId", "scope", "tokenEndpoint",
-    "claudeApiKey", "claudeModel", "claudeSystemPrompt", "claudeMaxTokens", "claudeTemperature", "claudeBaseUrl"
+    "claudeApiKey", "claudeModel", "claudeSystemPrompt", "claudeMaxTokens", "claudeTemperature", "claudeBaseUrl",
+    "geminiApiKey", "geminiModel", "geminiSystemPrompt", "geminiMaxTokens", "geminiTemperature", "geminiBaseUrl"
   ];
 
   /** The settings actually in force for one agent: its overrides over ours. */
@@ -454,6 +462,7 @@
   var MODE_LABEL = {
     m365: "Microsoft 365 Agents SDK",
     claude: "Claude \u00b7 Anthropic API",
+    gemini: "Gemini \u00b7 Google AI (free tier)",
     directline: "Legacy \u00b7 Direct Line, native canvas",
     sso: "Legacy \u00b7 Direct Line with single sign-on",
     iframe: "Legacy \u00b7 embedded frame"
@@ -678,6 +687,7 @@
 
     if (conn.mode === "m365") return connectViaAgentsSdk(agent);
     if (conn.mode === "claude") return connectViaClaude(agent);
+    if (conn.mode === "gemini") return connectViaGemini(agent);
 
     var bearerStep = conn.mode === "sso" && global.Connect
       ? global.Connect.acquireToken(conn).then(function (res) {
@@ -825,6 +835,43 @@
 
     return Chat.open(state.activeChat, {
       transport: "claude",
+      settings: settings
+    }).catch(function (err) {
+      setStatus("offline", err && err.message);
+      logEvent("Connection failed", err && err.message, "err");
+    });
+  }
+
+  function geminiSettings(agent) {
+    var c = effectiveConn(agent);
+    return {
+      apiKey: c.geminiApiKey,
+      model: c.geminiModel,
+      systemPrompt: c.geminiSystemPrompt,
+      maxTokens: c.geminiMaxTokens,
+      temperature: c.geminiTemperature,
+      baseUrl: c.geminiBaseUrl
+    };
+  }
+
+  /** Gemini, direct to Google's free-tier API — no sign-in, just an API key. */
+  function connectViaGemini(agent) {
+    var settings = geminiSettings(agent);
+
+    if (!global.GeminiClient || !global.GeminiClient.isConfigured(settings)) {
+      setStatus("offline", "Gemini connection is not configured yet.");
+      logEvent("Connection settings needed", "Add the Gemini API key", "warn");
+      Chat.showSetupNeeded(
+        "This chat needs a Gemini API key. Open Connection settings and paste in a free key from " +
+        "aistudio.google.com \u203A Get API key."
+      );
+      return Promise.resolve();
+    }
+
+    setStatus("connecting");
+
+    return Chat.open(state.activeChat, {
+      transport: "gemini",
       settings: settings
     }).catch(function (err) {
       setStatus("offline", err && err.message);
@@ -1745,11 +1792,16 @@
   /** Claude agents have no Copilot Studio URL, so hide that field for them. */
   function syncAgentFormMode() {
     var sel = $("#agent-form-mode");
-    var isClaude = !!(sel && sel.value === "claude");
+    var mode = sel ? sel.value : "";
+    var isClaude = mode === "claude";
+    var isGemini = mode === "gemini";
     var urlField = $("#agent-form-url-field");
-    var note = $("#agent-form-claude-note");
-    if (urlField) urlField.hidden = isClaude;
-    if (note) note.hidden = !isClaude;
+    var claudeNote = $("#agent-form-claude-note");
+    var geminiNote = $("#agent-form-gemini-note");
+    // Neither Claude nor Gemini has a Copilot Studio address to paste.
+    if (urlField) urlField.hidden = isClaude || isGemini;
+    if (claudeNote) claudeNote.hidden = !isClaude;
+    if (geminiNote) geminiNote.hidden = !isGemini;
   }
 
   /** Show the staged icon, or the initials that would be used instead. */
@@ -1843,7 +1895,10 @@
          "still exposes a Token Endpoint.",
     claude: "Talks directly to the Anthropic API from this browser, on the same native BIG A canvas as " +
             "the Agents SDK mode \u2014 saved history, copy buttons, file drops. Needs an Anthropic API " +
-            "key, which is stored only in this browser and sent only to api.anthropic.com."
+            "key, which is stored only in this browser and sent only to api.anthropic.com.",
+    gemini: "Talks directly to Google's Gemini API from this browser, on the same native canvas \u2014 " +
+            "saved history, copy buttons, file drops. Needs a Gemini API key, free to create with no " +
+            "credit card, stored only in this browser and sent only to generativelanguage.googleapis.com."
   };
 
   /** The agent the connection modal is currently editing, or null for global. */
@@ -1857,6 +1912,7 @@
     var needsLegacy = mode === "directline" || mode === "sso";
     var needsSignIn = mode === "m365" || mode === "sso";
     var needsClaude = mode === "claude";
+    var needsGemini = mode === "gemini";
 
     // The wrapper is only empty for modes with no fields at all, which no
     // longer happens: the embed mode has its own panel now.
@@ -1870,6 +1926,11 @@
     var claudeAdv = $("#conn-claude-advanced");
     if (claudeAdv) claudeAdv.hidden = !needsClaude;
     if (needsClaude) syncClaudeModelField();
+    var geminiFields = $("#conn-gemini-fields");
+    if (geminiFields) geminiFields.hidden = !needsGemini;
+    var geminiAdv = $("#conn-gemini-advanced");
+    if (geminiAdv) geminiAdv.hidden = !needsGemini;
+    if (needsGemini) syncGeminiModelField();
 
     // Only nag for the environment ID when it is actually unobtainable from
     // the URL, which is exactly the default-environment case.
@@ -1890,9 +1951,10 @@
       }
     }
     // Advanced settings only mean anything to the two direct transports.
-    // Claude has its own "Optional settings" block instead (#conn-claude-advanced above).
+    // Claude and Gemini each have their own "Optional settings" block instead
+    // (#conn-claude-advanced / #conn-gemini-advanced above).
     var adv = $("#conn-advanced");
-    if (adv) adv.hidden = mode === "iframe" || needsClaude;
+    if (adv) adv.hidden = mode === "iframe" || needsClaude || needsGemini;
 
     // Number the visible steps, so "Step 2" is always the second thing seen.
     var signInNo = $("#conn-signin-no");
@@ -2057,7 +2119,13 @@
       claudeSystemPrompt: $("#conn-claude-system").value.trim(),
       claudeMaxTokens: $("#conn-claude-max-tokens").value.trim(),
       claudeTemperature: $("#conn-claude-temperature").value.trim(),
-      claudeBaseUrl: $("#conn-claude-base-url").value.trim()
+      claudeBaseUrl: $("#conn-claude-base-url").value.trim(),
+      geminiApiKey: $("#conn-gemini-key").value.trim(),
+      geminiModel: readGeminiModel(),
+      geminiSystemPrompt: $("#conn-gemini-system").value.trim(),
+      geminiMaxTokens: $("#conn-gemini-max-tokens").value.trim(),
+      geminiTemperature: $("#conn-gemini-temperature").value.trim(),
+      geminiBaseUrl: $("#conn-gemini-base-url").value.trim()
     };
   }
 
@@ -2096,6 +2164,43 @@
       if (custom) custom.value = value;
     }
     syncClaudeModelField();
+  }
+
+  /** Same idea as readClaudeModel(), for the Gemini model select. */
+  function readGeminiModel() {
+    var sel = $("#conn-gemini-model");
+    if (!sel) return "";
+    if (sel.value === "__custom") {
+      var custom = $("#conn-gemini-model-custom");
+      return custom ? custom.value.trim() : "";
+    }
+    return sel.value;
+  }
+
+  /** Show the free-text model box only when "Custom model ID…" is picked. */
+  function syncGeminiModelField() {
+    var sel = $("#conn-gemini-model");
+    var custom = $("#conn-gemini-model-custom");
+    if (!sel || !custom) return;
+    custom.hidden = sel.value !== "__custom";
+  }
+
+  /** Reverse of readGeminiModel(): put a stored model id back into the form. */
+  function setGeminiModelSelect(value) {
+    var sel = $("#conn-gemini-model");
+    var custom = $("#conn-gemini-model-custom");
+    if (!sel) return;
+    if (!value) {
+      sel.selectedIndex = 0;
+      if (custom) custom.value = "";
+    } else if ($$("option", sel).some(function (o) { return o.value === value; })) {
+      sel.value = value;
+      if (custom) custom.value = "";
+    } else {
+      sel.value = "__custom";
+      if (custom) custom.value = value;
+    }
+    syncGeminiModelField();
   }
 
   /**
@@ -2209,6 +2314,18 @@
     $("#conn-claude-base-url").value = c.claudeBaseUrl || "";
     var claudeResolved = $("#conn-claude-resolved");
     if (claudeResolved) claudeResolved.textContent = "";
+    var geminiKey = $("#conn-gemini-key");
+    geminiKey.value = c.geminiApiKey || "";
+    geminiKey.type = "password";
+    var geminiKeyToggle = $("#conn-gemini-key-toggle");
+    if (geminiKeyToggle) geminiKeyToggle.textContent = "Show";
+    setGeminiModelSelect(c.geminiModel || "");
+    $("#conn-gemini-system").value = c.geminiSystemPrompt || "";
+    $("#conn-gemini-max-tokens").value = c.geminiMaxTokens || "";
+    $("#conn-gemini-temperature").value = c.geminiTemperature || "";
+    $("#conn-gemini-base-url").value = c.geminiBaseUrl || "";
+    var geminiResolved = $("#conn-gemini-resolved");
+    if (geminiResolved) geminiResolved.textContent = "";
     var redirect = location.origin + location.pathname;
     $("#conn-redirect").textContent = redirect;
     $("#conn-redirect-legacy").textContent = redirect;
@@ -2308,6 +2425,33 @@
       logEvent("Connection test passed", settings.model, "ok");
     }).catch(function (err) {
       $("#conn-claude-resolved").textContent = err.message;
+      toast(err.message, "err");
+      logEvent("Connection test failed", err.message, "err");
+    }).then(function () {
+      btn.disabled = false;
+      btn.textContent = was;
+    });
+  }
+
+  /** Same idea as testClaudeConnection(), for the Gemini transport's own key + model. */
+  function testGeminiConnection() {
+    var btn = $("#conn-gemini-test");
+    var s = readConnForm();
+    var settings = { apiKey: s.geminiApiKey, model: s.geminiModel, baseUrl: s.geminiBaseUrl };
+    if (!global.GeminiClient || !global.GeminiClient.isConfigured(settings)) {
+      toast("Add your API key and choose a model first.", "err");
+      return;
+    }
+    btn.disabled = true;
+    var was = btn.textContent;
+    btn.textContent = "Testing…";
+
+    global.GeminiClient.testConnection(settings).then(function () {
+      $("#conn-gemini-resolved").textContent = "Connected. Gemini answered successfully.";
+      toast("Connection works");
+      logEvent("Connection test passed", settings.model, "ok");
+    }).catch(function (err) {
+      $("#conn-gemini-resolved").textContent = err.message;
       toast(err.message, "err");
       logEvent("Connection test failed", err.message, "err");
     }).then(function () {
@@ -2453,6 +2597,16 @@
         return;
       }
     }
+    if (mode === "gemini") {
+      if (!form.geminiApiKey) {
+        toast("Add your Gemini API key.", "err");
+        return;
+      }
+      if (!form.geminiModel) {
+        toast("Choose a model, or enter a custom model ID.", "err");
+        return;
+      }
+    }
 
     var next = {
       mode: mode,
@@ -2471,7 +2625,13 @@
       claudeSystemPrompt: form.claudeSystemPrompt,
       claudeMaxTokens: form.claudeMaxTokens,
       claudeTemperature: form.claudeTemperature,
-      claudeBaseUrl: form.claudeBaseUrl
+      claudeBaseUrl: form.claudeBaseUrl,
+      geminiApiKey: form.geminiApiKey,
+      geminiModel: form.geminiModel,
+      geminiSystemPrompt: form.geminiSystemPrompt,
+      geminiMaxTokens: form.geminiMaxTokens,
+      geminiTemperature: form.geminiTemperature,
+      geminiBaseUrl: form.geminiBaseUrl
     };
 
     var sel = $("#conn-target");
@@ -2565,18 +2725,18 @@
     var name = $("#agent-form-name").value.trim();
     var modeSel = $("#agent-form-mode");
     var mode = modeSel ? modeSel.value : "";
-    // Claude talks straight to the Anthropic API, so there is no Copilot
-    // Studio address to require or extract here — that agent's credentials
-    // live in Connection settings instead, same as an Agents SDK agent's
-    // Entra details do.
-    var isClaude = mode === "claude";
+    // Claude and Gemini both talk straight to their own API, so there is no
+    // Copilot Studio address to require or extract here — that agent's
+    // credentials live in Connection settings instead, same as an Agents
+    // SDK agent's Entra details do.
+    var noUrlMode = mode === "claude" || mode === "gemini";
 
     var raw = $("#agent-form-url").value.trim();
     // Copilot Studio hands out a whole HTML document, so accept that too and
     // keep only the address from inside it.
-    var url = isClaude ? "" : A.extractUrl(raw);
+    var url = noUrlMode ? "" : A.extractUrl(raw);
     if (!name) { toast("Give the agent a name.", "err"); return; }
-    if (!isClaude) {
+    if (!noUrlMode) {
       if (!raw) { toast("Give the agent a name and a URL.", "err"); return; }
       if (!url) {
         toast("No https:// address found. Paste the agent URL, or the whole embed code.", "err");
@@ -2593,10 +2753,10 @@
       var prevMode = (existing.conn && existing.conn.mode) || "";
       var urlChanged = false;
       existing.name = name;
-      // Leave a Claude-bound agent's stored URL alone rather than blanking
-      // it — switching back to Copilot Studio mode later should not require
+      // Leave a URL-less agent's stored URL alone rather than blanking it —
+      // switching back to a Copilot Studio mode later should not require
       // pasting the address again.
-      if (!isClaude) {
+      if (!noUrlMode) {
         urlChanged = existing.url !== url;
         existing.url = url;
       }
@@ -2606,7 +2766,7 @@
       if (agentIconDraft) existing.icon = agentIconDraft;
       else delete existing.icon;
       // Only the mode is touched here. The rest of an agent's connection
-      // record (endpoints, ids, the Claude API key) belongs to the
+      // record (endpoints, ids, the Claude/Gemini API key) belongs to the
       // connection modal and must survive a rename.
       if (mode) {
         existing.conn = existing.conn || {};
@@ -3040,6 +3200,19 @@
     }
     var claudeTest = $("#conn-claude-test");
     if (claudeTest) claudeTest.addEventListener("click", testClaudeConnection);
+    var geminiModelSel = $("#conn-gemini-model");
+    if (geminiModelSel) geminiModelSel.addEventListener("change", syncGeminiModelField);
+    var geminiKeyToggle = $("#conn-gemini-key-toggle");
+    if (geminiKeyToggle) {
+      geminiKeyToggle.addEventListener("click", function () {
+        var input = $("#conn-gemini-key");
+        var show = input.type === "password";
+        input.type = show ? "text" : "password";
+        this.textContent = show ? "Hide" : "Show";
+      });
+    }
+    var geminiTest = $("#conn-gemini-test");
+    if (geminiTest) geminiTest.addEventListener("click", testGeminiConnection);
     ["#conn-env-id", "#conn-legacy-env-id", "#conn-schema", "#conn-cloud",
       "#conn-agent-type", "#conn-direct-url"].forEach(function (sel) {
       $(sel).addEventListener("change", syncConnFields);

@@ -1,9 +1,9 @@
 # BIG A
 
 A static, single-page front end for a Microsoft Copilot Studio agent — or for
-Claude, talked to directly. It is plain HTML, CSS and JavaScript — no build
-step, no framework, no server, no dependencies. Drop the folder into a GitHub
-Pages repository and it runs.
+Claude or Gemini, talked to directly. It is plain HTML, CSS and JavaScript —
+no build step, no framework, no server, no dependencies. Drop the folder into
+a GitHub Pages repository and it runs.
 
 ## Start here: which mode should I use?
 
@@ -13,30 +13,33 @@ string and do not expose an anonymous Direct Line Token Endpoint. The Agents
 SDK mode keeps BIG A's native, copyable, saved chat canvas, but requires Entra
 ID user sign-in.
 
-**Claude is a separate, first-class mode**, for talking to a Claude model
-instead of a Copilot Studio agent. It uses the same native canvas — saved
-history, streaming, copy buttons, file drops — but calls the Anthropic API
-directly from this browser with your own API key, so it needs no Entra
-registration and no agent to publish.
+**Claude and Gemini are separate, first-class modes**, for talking to a model
+directly instead of a Copilot Studio agent. Both use the same native canvas —
+saved history, streaming, copy buttons, file drops — but call the provider's
+API directly from this browser with your own API key, so neither needs an
+Entra registration or an agent to publish. Gemini's key is free to create,
+with no credit card, and stays within Google's free-tier quota as long as a
+Flash-class model is selected; Claude's is a normal paid API key.
 
 | Mode | Setup needed | Notes |
 | --- | --- | --- |
 | **Microsoft 365 Agents SDK** (default) | Agents SDK connection string and an Entra single-page application | Uses the authenticated Direct-to-Engine protocol. Requires delegated `CopilotStudio.Copilots.Invoke`, admin consent, and user sign-in. |
-| **Claude** | An Anthropic API key | Talks to the Anthropic API directly from this browser. No Copilot Studio agent, no Entra app, no sign-in — just a key. |
+| **Claude** | An Anthropic API key | Talks to the Anthropic API directly from this browser. No Copilot Studio agent, no Entra app, no sign-in — just a key. Billed per use. |
+| **Gemini** | A free Gemini API key | Talks to Google's Gemini API directly from this browser. No Copilot Studio agent, no Entra app, no sign-in, no credit card — just a key, and Flash-class models stay within Google's free tier. |
 | **Legacy embed (iframe)** | None | Uses Copilot Studio's canvas in a frame. BIG A cannot style, read, copy, search, or save the messages inside it. |
 | **Legacy Direct Line canvas** | A Token Endpoint shown by Copilot Studio | Only for older anonymous agents. It is unavailable if the Channels page does not show a Token Endpoint. |
 | **Legacy Direct Line with single sign-on** | Token Endpoint and Entra setup | Retained for older agents that still expose Direct Line. |
 
 ### Why the mode matters
 
-The Agents SDK, Claude, and legacy Direct Line modes render every message in
-BIG A. This enables per-message copy buttons, saved local history, themes, the
-workbench, and search. The iframe loads another origin, so the browser
-prevents BIG A from reading or changing its contents.
+The Agents SDK, Claude, Gemini, and legacy Direct Line modes render every
+message in BIG A. This enables per-message copy buttons, saved local history,
+themes, the workbench, and search. The iframe loads another origin, so the
+browser prevents BIG A from reading or changing its contents.
 
-Modes are stored per agent. One agent can talk to Claude while another uses
-the Agents SDK, or legacy Direct Line. Set the mode when adding an agent or in
-**Connection settings**.
+Modes are stored per agent. One agent can talk to Claude, another to Gemini,
+another to the Agents SDK, or legacy Direct Line. Set the mode when adding an
+agent or in **Connection settings**.
 
 ## Adding an agent
 
@@ -47,9 +50,9 @@ embed code that Copilot Studio gives you. The `<iframe>` wrapper is stripped
 automatically and only the address is kept, so there is no need to hunt for the
 `src` by hand.
 
-Choosing **Claude** as the mode hides the URL box — there is no Copilot Studio
-address for it. Save the agent, then open its **Connection settings** to add
-an API key and pick a model.
+Choosing **Claude** or **Gemini** as the mode hides the URL box — neither has
+a Copilot Studio address. Save the agent, then open its **Connection
+settings** to add an API key and pick a model.
 
 ## Setup: the Microsoft 365 Agents SDK
 
@@ -172,6 +175,41 @@ a personal or organisation-wide one.
   Fable 5) reject a non-default temperature outright, so that box only does
   anything on an older model such as Haiku 4.5.
 
+## Setup: Gemini, free-tier direct to Google's API
+
+The same idea as the Claude mode above, but the API key itself costs nothing:
+
+1. **Settings → Add an agent** (or **Connection settings** for an existing
+   one). Give it a name and set **How this agent connects** to **Gemini**.
+2. Save the agent, then open its **Connection settings**.
+3. Create a free key at
+   [aistudio.google.com → Get API key](https://aistudio.google.com/apikey) —
+   no credit card required.
+4. Pick a model. Every model under **Free tier** in the dropdown stays within
+   Google's no-cost quota; **Gemini 3.5 Flash** is a reasonable default.
+   Pro-tier models are listed too, clearly marked, for when free-tier quality
+   is not enough and a billed key is worth it.
+5. Optionally add a system prompt, then **Test connection** and **Save &
+   connect**.
+
+**What is different from the free tier's "free," specifically:**
+
+- **It is rate-limited, not unlimited.** Google publishes daily and
+  per-minute request caps per model and adjusts them periodically — check
+  [the current numbers](https://ai.google.dev/gemini-api/docs/rate-limits)
+  rather than assume a fixed figure. Flash-Lite has the most headroom; Pro
+  effectively requires billing for anything beyond very light, occasional
+  use.
+- **Google may use free-tier prompts to improve their models.** This is a
+  documented difference between the free and paid tiers of the Gemini API —
+  worth knowing before sending anything sensitive through a free key. Billed
+  keys are not used this way.
+- Everything else about how this mode behaves — permanent local history,
+  native image/PDF attachments, no server-side tools, the API key living
+  only in this browser and only ever sent to
+  `generativelanguage.googleapis.com` — is identical to the Claude mode
+  above; see its notes for the detail.
+
 ## Troubleshooting
 
 BIG A turns the common failures into plain English, but for reference:
@@ -257,29 +295,36 @@ These are real constraints, not oversights:
   none of these restrictions. The frame remains available as a fallback.
 - **Web search, charts and tools are agent-side features of Copilot Studio.**
   BIG A renders their output and reports their progress, but cannot switch
-  them on — configure those in Copilot Studio. The Claude mode has no
-  equivalent yet either; it is plain conversation, with no server-side tools.
+  them on — configure those in Copilot Studio. Neither the Claude nor the
+  Gemini mode has an equivalent yet either; both are plain conversation, with
+  no server-side tools.
 - **Conversations expire server-side** after a period of inactivity. Your
   transcript is kept locally forever and always displayed, but once a
   conversation has expired the *agent* no longer remembers those earlier turns.
   BIG A opens a fresh conversation automatically and replays the turn you were
   sending, so you will not lose a message. (This does not apply to the Claude
-  mode: there is no server-side conversation to expire, since the whole
-  visible transcript is resent on every turn.)
-- **Claude attachments are capped at 5 MB each**, and are re-sent — re-read
-  from local storage and re-uploaded — on every later turn of the same chat,
-  since the Messages API has no memory of its own between requests. Long
-  conversations with several large images or PDFs will therefore use more
-  bandwidth and tokens per turn as they grow.
+  or Gemini modes: neither has a server-side conversation to expire, since the
+  whole visible transcript is resent on every turn.)
+- **Claude and Gemini attachments are capped at 5 MB each**, and are re-sent
+  — re-read from local storage and re-uploaded — on every later turn of the
+  same chat, since neither API has any memory of its own between requests.
+  Long conversations with several large images or PDFs will therefore use
+  more bandwidth (and, for Claude, tokens) per turn as they grow.
+- **Gemini's free tier is rate-limited and may train on your prompts.**
+  Google's no-cost quota is real but bounded — daily and per-minute request
+  caps that Google adjusts periodically, tighter on Pro-tier models than on
+  Flash — and, unlike the paid tier, free-tier requests may be used to
+  improve Google's models. See the Gemini setup section above.
 
 ## Where your data lives
 
 Everything — chats, the full message transcript, projects, attachments, and
-any Claude API key you add — is stored **on your machine** in IndexedDB,
-under the origin the site is served from. Nothing is sent anywhere except the
-messages you send to your agent (and, for the Claude mode, straight to
-`api.anthropic.com`); connection settings, including the API key, never leave
-the browser except in that outgoing request.
+any Claude or Gemini API key you add — is stored **on your machine** in
+IndexedDB, under the origin the site is served from. Nothing is sent anywhere
+except the messages you send to your agent (and, for the Claude and Gemini
+modes, straight to `api.anthropic.com` or `generativelanguage.googleapis.com`
+respectively); connection settings, including either API key, never leave the
+browser except in that outgoing request.
 
 That means transcripts survive page closure, browser restart and machine
 shutdown. It also means they are per-browser and per-device. To move a
@@ -334,7 +379,7 @@ policy as a real header, which additionally covers `frame-ancestors` and
 `sandbox` (both ignored in a meta policy):
 
 ```
-Content-Security-Policy: default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://unpkg.com https://cdn.botframework.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' blob: https://api.anthropic.com https://login.microsoftonline.com https://login.microsoftonline.us https://login.partner.microsoftonline.cn https://*.environment.api.powerplatform.com https://*.environment.api.preprod.powerplatform.com https://*.environment.api.gov.powerplatform.microsoft.us https://*.environment.api.high.powerplatform.microsoft.us https://*.environment.api.appsplatform.us https://*.environment.api.powerplatform.partner.microsoftonline.cn https://*.api.powerplatform.com https://powerva.microsoft.com https://*.powerva.microsoft.com https://copilotstudio.microsoft.com https://directline.botframework.com https://*.directline.botframework.com https://*.botframework.com https://*.blob.core.windows.net https://cdn.jsdelivr.net https://unpkg.com https://cdn.botframework.com wss://directline.botframework.com wss://*.directline.botframework.com; frame-src 'self' blob: https://copilotstudio.microsoft.com https://powerva.microsoft.com https://*.powerva.microsoft.com https://*.powervirtualagents.com https://*.botframework.com https://*.blob.core.windows.net; media-src 'self' blob: https:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'
+Content-Security-Policy: default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://unpkg.com https://cdn.botframework.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' blob: https://api.anthropic.com https://generativelanguage.googleapis.com https://login.microsoftonline.com https://login.microsoftonline.us https://login.partner.microsoftonline.cn https://*.environment.api.powerplatform.com https://*.environment.api.preprod.powerplatform.com https://*.environment.api.gov.powerplatform.microsoft.us https://*.environment.api.high.powerplatform.microsoft.us https://*.environment.api.appsplatform.us https://*.environment.api.powerplatform.partner.microsoftonline.cn https://*.api.powerplatform.com https://powerva.microsoft.com https://*.powerva.microsoft.com https://copilotstudio.microsoft.com https://directline.botframework.com https://*.directline.botframework.com https://*.botframework.com https://*.blob.core.windows.net https://cdn.jsdelivr.net https://unpkg.com https://cdn.botframework.com wss://directline.botframework.com wss://*.directline.botframework.com; frame-src 'self' blob: https://copilotstudio.microsoft.com https://powerva.microsoft.com https://*.powerva.microsoft.com https://*.powervirtualagents.com https://*.botframework.com https://*.blob.core.windows.net; media-src 'self' blob: https:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'
 ```
 
 A single-tenant deployment can narrow it further. If only the BGS environment is
@@ -353,10 +398,11 @@ Two consequences are worth knowing before editing it:
   in `frame-src`. Framing a third-party canvas needs its host added there.
 - If the CDN mirrors are removed from `script-src`, a vendored
   `assets/vendor/msal-browser.min.js` becomes mandatory.
-- If the Claude mode is never used, `https://api.anthropic.com` can be
-  removed from `connect-src` too. Pointing the Claude mode's optional
-  **API base URL** at a compatible proxy instead of Anthropic's own API
-  needs that proxy's host added here, or the browser blocks it.
+- If the Claude or Gemini modes are never used, `https://api.anthropic.com`
+  and/or `https://generativelanguage.googleapis.com` can be removed from
+  `connect-src` too. Pointing either mode's optional **API base URL** at a
+  compatible proxy instead of the provider's own API needs that proxy's host
+  added here, or the browser blocks it.
 
 ## Keyboard
 
@@ -446,6 +492,7 @@ without a picture keep their initials on a stable, name-derived tint.
 | `assets/js/store.js` | IndexedDB persistence, backup and restore |
 | `assets/js/m365agents.js` | **Microsoft 365 Agents SDK / Direct-to-Engine client** — current transport |
 | `assets/js/anthropic.js` | **Claude client** — talks to the Anthropic Messages API directly |
+| `assets/js/gemini.js` | **Gemini client** — talks to Google's Gemini API directly, free tier included |
 | `assets/js/directline.js` | Direct Line 3.0 client — legacy transport, kept as a fallback |
 | `assets/js/connect.js` | MSAL sign-in, shared by both authenticated transports |
 | `assets/js/chat.js` | The conversation surface, streaming, previews and composer |
@@ -490,6 +537,23 @@ one is live. Because the Messages API holds no server-side conversation state,
 there is no equivalent of `x-ms-conversationid` to resume — the whole
 transcript is rebuilt from local storage and resent each time the chat opens,
 then extended turn by turn in memory as replies stream back.
+
+**Gemini** follows the same shape as Claude, for the same reason (no
+server-side conversation to resume), but is a different API end to end: one
+`POST {base}/v1beta/models/{model}:streamGenerateContent?alt=sse` per turn,
+authenticated with an `x-goog-api-key` header, answered with a stream of
+`GenerateContentResponse` JSON objects (`candidates[0].content.parts[]`)
+rather than Anthropic's typed SSE events. `assets/js/gemini.js` translates
+that into the same `typing` / `message` activity shape as the other three
+transports. It deliberately targets this classic `generateContent` REST
+surface rather than Google's newer Interactions API
+(`{base}/v1beta/interactions`) — as of this writing the Interactions API's
+browser SDK sends an `Api-Revision` header that
+`generativelanguage.googleapis.com` does not include in its CORS allow-list,
+so it fails outright from a browser, while the classic endpoint used here
+answers CORS preflights correctly for `content-type` and `x-goog-api-key`.
+Worth re-checking if Google closes that gap, since the Interactions API is
+where new Gemini features land first.
 
 ## Deploying to GitHub Pages
 

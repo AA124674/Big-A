@@ -10,11 +10,12 @@
      connect-src and frame-src are enumerated rather than a blanket `https:`,
      so a bearer token or API key cannot be posted to an origin outside
      Microsoft sign-in, the Power Platform environment APIs, Direct Line,
-     the Anthropic API and the attachment hosts those services actually use.
-     A legacy "iframe" embed pointing at a non-Microsoft canvas needs its
-     host added to frame-src; a Claude-compatible proxy other than
-     api.anthropic.com needs its host added to connect-src. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://unpkg.com https://cdn.botframework.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' blob: https://api.anthropic.com https://login.microsoftonline.com https://login.microsoftonline.us https://login.partner.microsoftonline.cn https://*.environment.api.powerplatform.com https://*.environment.api.preprod.powerplatform.com https://*.environment.api.gov.powerplatform.microsoft.us https://*.environment.api.high.powerplatform.microsoft.us https://*.environment.api.appsplatform.us https://*.environment.api.powerplatform.partner.microsoftonline.cn https://*.api.powerplatform.com https://powerva.microsoft.com https://*.powerva.microsoft.com https://copilotstudio.microsoft.com https://directline.botframework.com https://*.directline.botframework.com https://*.botframework.com https://*.blob.core.windows.net https://cdn.jsdelivr.net https://unpkg.com https://cdn.botframework.com wss://directline.botframework.com wss://*.directline.botframework.com; frame-src 'self' blob: https://copilotstudio.microsoft.com https://powerva.microsoft.com https://*.powerva.microsoft.com https://*.powervirtualagents.com https://*.botframework.com https://*.blob.core.windows.net; media-src 'self' blob: https:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'">
+     the Anthropic and Gemini APIs, and the attachment hosts those services
+     actually use. A legacy "iframe" embed pointing at a non-Microsoft canvas
+     needs its host added to frame-src; a Claude- or Gemini-compatible proxy
+     other than api.anthropic.com / generativelanguage.googleapis.com needs
+     its host added to connect-src. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://unpkg.com https://cdn.botframework.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' blob: https://api.anthropic.com https://generativelanguage.googleapis.com https://login.microsoftonline.com https://login.microsoftonline.us https://login.partner.microsoftonline.cn https://*.environment.api.powerplatform.com https://*.environment.api.preprod.powerplatform.com https://*.environment.api.gov.powerplatform.microsoft.us https://*.environment.api.high.powerplatform.microsoft.us https://*.environment.api.appsplatform.us https://*.environment.api.powerplatform.partner.microsoftonline.cn https://*.api.powerplatform.com https://powerva.microsoft.com https://*.powerva.microsoft.com https://copilotstudio.microsoft.com https://directline.botframework.com https://*.directline.botframework.com https://*.botframework.com https://*.blob.core.windows.net https://cdn.jsdelivr.net https://unpkg.com https://cdn.botframework.com wss://directline.botframework.com wss://*.directline.botframework.com; frame-src 'self' blob: https://copilotstudio.microsoft.com https://powerva.microsoft.com https://*.powerva.microsoft.com https://*.powervirtualagents.com https://*.botframework.com https://*.blob.core.windows.net; media-src 'self' blob: https:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
 <title>BIG A — your intelligent workspace</title>
@@ -566,6 +567,7 @@
         <option value="">Use the workspace default</option>
         <option value="m365">Recommended: Microsoft 365 Agents SDK</option>
         <option value="claude">Claude &mdash; direct to the Anthropic API</option>
+        <option value="gemini">Gemini &mdash; direct to Google's free-tier API</option>
         <option value="directline">Legacy: BIG A canvas (Token Endpoint required)</option>
         <option value="iframe">Legacy: Copilot Studio's own canvas in a frame</option>
       </select>
@@ -574,6 +576,9 @@
       <p class="hint" id="agent-form-claude-note" hidden>Claude agents talk straight to the Anthropic
         API, so there is no Copilot Studio address to paste. Save this agent, then open its
         <strong>Connection settings</strong> to add an API key and pick a model.</p>
+      <p class="hint" id="agent-form-gemini-note" hidden>Gemini agents talk straight to Google's API, so
+        there is no Copilot Studio address to paste. Save this agent, then open its
+        <strong>Connection settings</strong> to add a free API key and pick a model.</p>
     </div>
     <div class="field">
       <label for="agent-form-desc">Description (optional)</label>
@@ -865,6 +870,7 @@
       <select id="conn-mode">
         <option value="m365">Recommended: Microsoft 365 Agents SDK (requires Entra setup)</option>
         <option value="claude">Claude &mdash; direct to the Anthropic API (requires an API key)</option>
+        <option value="gemini">Gemini &mdash; direct to Google's API (free tier, requires an API key)</option>
         <option value="directline">Legacy: BIG A canvas (Token Endpoint required)</option>
         <option value="iframe">Legacy: Copilot Studio's own canvas in a frame</option>
         <option value="sso">Legacy: BIG A canvas with single sign-on</option>
@@ -999,6 +1005,92 @@
           <div class="field">
             <label for="conn-claude-base-url">API base URL</label>
             <input type="text" id="conn-claude-base-url" spellcheck="false" placeholder="https://api.anthropic.com">
+            <p class="hint">Only change this to point at a compatible proxy. A non-default host must also
+              be added to <code>connect-src</code> in the Content Security Policy in
+              <code>index.html</code>, or the browser will block it.</p>
+          </div>
+        </details>
+      </section>
+
+      <!-- ============ Gemini, direct to Google's free-tier API ============ -->
+      <section class="conn-step" id="conn-gemini-fields" hidden>
+        <header class="conn-step-head">
+          <span class="conn-step-no">1</span>
+          <span class="conn-step-title">
+            <strong>Add a free Gemini API key</strong>
+            <small>Required, but free: requests go straight from this browser to
+              generativelanguage.googleapis.com, using Google's no-credit-card API tier &mdash;
+              there is no server in between, so nothing but your messages ever leaves this device.</small>
+          </span>
+        </header>
+
+        <div class="field">
+          <label for="conn-gemini-key">API key</label>
+          <input type="password" id="conn-gemini-key" spellcheck="false" autocomplete="off"
+                 placeholder="AIza&hellip;">
+          <div class="conn-inline-acts">
+            <button class="btn btn-ghost btn-sm" id="conn-gemini-key-toggle" type="button">Show</button>
+          </div>
+          <p class="hint">Create a free key at <a href="https://aistudio.google.com/apikey"
+            target="_blank" rel="noopener">aistudio.google.com &rsaquo; Get API key</a> &mdash; no credit
+            card needed. As with any key stored here, anyone with access to this browser can read it back
+            out of its network requests.</p>
+        </div>
+
+        <div class="field">
+          <label for="conn-gemini-model">Model</label>
+          <select id="conn-gemini-model">
+            <optgroup label="Free tier">
+              <option value="gemini-3.5-flash">Gemini 3.5 Flash &mdash; balanced, the default</option>
+              <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash-Lite &mdash; fastest and lightest</option>
+              <option value="gemini-2.5-flash">Gemini 2.5 Flash &mdash; previous generation, still free</option>
+            </optgroup>
+            <optgroup label="Needs a billed key &mdash; not free">
+              <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro &mdash; highest quality</option>
+            </optgroup>
+            <option value="__custom">Custom model ID&hellip;</option>
+          </select>
+          <input type="text" id="conn-gemini-model-custom" spellcheck="false" hidden placeholder="gemini-&hellip;">
+          <p class="hint">The Flash models above are covered by Google's free tier. Pro-tier models
+            generally need billing turned on even for light use &mdash; pick <strong>Custom model
+            ID</strong> for anything not listed yet.</p>
+        </div>
+
+        <div class="field">
+          <label for="conn-gemini-system">System prompt (optional)</label>
+          <textarea id="conn-gemini-system" rows="3" spellcheck="true"
+                    placeholder="You are a helpful assistant for..."></textarea>
+          <p class="hint">Sets this agent&rsquo;s persona and instructions, the same role a Copilot Studio
+            agent&rsquo;s own configuration plays. Leave it blank for plain Gemini.</p>
+        </div>
+
+        <div class="conn-actions">
+          <button class="btn btn-ghost btn-sm" id="conn-gemini-test" type="button">Test connection</button>
+        </div>
+        <p class="hint conn-target-line" id="conn-gemini-resolved"></p>
+
+        <details class="setup-help" id="conn-gemini-advanced">
+          <summary>Optional settings &mdash; you almost certainly do not need these</summary>
+
+          <div class="field-row">
+            <div class="field">
+              <label for="conn-gemini-max-tokens">Max output tokens</label>
+              <input type="text" id="conn-gemini-max-tokens" spellcheck="false" placeholder="4096">
+              <p class="hint">Upper bound on each reply. Higher costs more time (and, past the free
+                quota, money); current Gemini models allow up to about 64,000.</p>
+            </div>
+            <div class="field">
+              <label for="conn-gemini-temperature">Temperature</label>
+              <input type="text" id="conn-gemini-temperature" spellcheck="false" placeholder="Default">
+              <p class="hint">Leave blank for the model&rsquo;s default (usually 1.0). Higher is more
+                varied, lower is more focused.</p>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="conn-gemini-base-url">API base URL</label>
+            <input type="text" id="conn-gemini-base-url" spellcheck="false"
+                   placeholder="https://generativelanguage.googleapis.com">
             <p class="hint">Only change this to point at a compatible proxy. A non-default host must also
               be added to <code>connect-src</code> in the Content Security Policy in
               <code>index.html</code>, or the browser will block it.</p>
@@ -1301,6 +1393,7 @@
 <script src="assets/js/directline.js"></script>
 <script src="assets/js/m365agents.js"></script>
 <script src="assets/js/anthropic.js"></script>
+<script src="assets/js/gemini.js"></script>
 <script src="assets/js/connect.js"></script>
 <script src="assets/js/chat.js"></script>
 <script src="assets/js/app.js"></script>

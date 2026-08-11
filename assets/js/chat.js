@@ -877,6 +877,7 @@
     var chat = opts.chat || {};
     var transport = opts.transport === "directline" ? "directline"
       : opts.transport === "claude" ? "claude"
+      : opts.transport === "gemini" ? "gemini"
       : "m365";
 
     if (client) { try { client.end(); } catch (e) { noop(); } client = null; }
@@ -888,6 +889,7 @@
 
     var attempt = transport === "m365" ? connectM365(opts, chat)
       : transport === "claude" ? connectClaude(opts, chat)
+      : transport === "gemini" ? connectGemini(opts, chat)
       : connectDirectLine(opts, chat);
 
     return attempt.then(function (c) {
@@ -896,6 +898,8 @@
         ? "Microsoft 365 Agents SDK · Direct-to-Engine"
         : transport === "claude"
         ? "Claude · Anthropic API"
+        : transport === "gemini"
+        ? "Gemini · Google AI (free tier)"
         : "Direct Line 3.0");
       els.composer.classList.remove("disabled");
       els.input.disabled = false;
@@ -946,6 +950,25 @@
       settings: opts.settings || {},
       chatId: chatId,
       agentName: (agent && agent.name) || "Claude",
+      onActivity: handleActivity,
+      onStatus: function (s) {
+        if (s === "online") setStatus("online");
+        else if (s === "reconnecting") setStatus("reconnecting");
+        else setStatus("connecting");
+      },
+      onError: function (e) { if (hooks.onToast) hooks.onToast(e.message, "err"); }
+    });
+  }
+
+  /** Gemini, direct to Google's API — same stateless-history approach as Claude. */
+  function connectGemini(opts, chat) {
+    if (!global.GeminiClient) {
+      return Promise.reject(new Error("The Gemini transport failed to load."));
+    }
+    return global.GeminiClient.connect({
+      settings: opts.settings || {},
+      chatId: chatId,
+      agentName: (agent && agent.name) || "Gemini",
       onActivity: handleActivity,
       onStatus: function (s) {
         if (s === "online") setStatus("online");
