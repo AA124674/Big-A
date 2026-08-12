@@ -538,12 +538,6 @@
     <button class="icon-btn" data-close data-icon="x" aria-label="Close"></button>
   </div>
   <div class="modal-body">
-    <div class="notice">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7" fill="none"/><path d="M12 11v5M12 8h.01" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
-      <span>Paste any Copilot Studio, Azure Bot or web chat address. In Copilot Studio, open the
-      agent&rsquo;s <strong>Channels</strong> page &rarr; <strong>Custom website</strong>, or paste the
-      whole embed code &mdash; the address is pulled out of it for you.</span>
-    </div>
     <div class="field">
       <label for="agent-form-name">Display name</label>
       <input type="text" id="agent-form-name" placeholder="e.g. HR Assistant">
@@ -566,19 +560,22 @@
       <select id="agent-form-mode">
         <option value="">Use the workspace default</option>
         <option value="m365">Recommended: Microsoft 365 Agents SDK</option>
-        <option value="claude">Claude &mdash; direct to the Anthropic API</option>
-        <option value="gemini">Gemini &mdash; direct to Google's free-tier API</option>
+        <option value="claude">Claude: direct to the Anthropic API</option>
+        <option value="gemini">Gemini: direct to Google's free-tier API</option>
         <option value="directline">Legacy: BIG A canvas (Token Endpoint required)</option>
         <option value="iframe">Legacy: Copilot Studio's own canvas in a frame</option>
       </select>
       <div class="hint">Set per agent, so one agent can use the full client while another stays on
-        a legacy transport. Changeable later in Connection settings.</div>
+        a legacy transport.</div>
       <p class="hint" id="agent-form-claude-note" hidden>Claude agents talk straight to the Anthropic
-        API, so there is no Copilot Studio address to paste. Save this agent, then open its
-        <strong>Connection settings</strong> to add an API key and pick a model.</p>
-      <p class="hint" id="agent-form-gemini-note" hidden>Gemini agents talk straight to Google's API, so
-        there is no Copilot Studio address to paste. Save this agent, then open its
-        <strong>Connection settings</strong> to add a free API key and pick a model.</p>
+        API, so there is no Copilot Studio address to paste. Use <strong>Connection settings</strong>
+        below to add an API key and pick a model.</p>
+      <p class="hint" id="agent-form-gemini-note" hidden>Gemini agents talk straight to Google's API,
+        so there is no Copilot Studio address to paste. Use <strong>Connection settings</strong> below
+        to add a free API key and pick a model.</p>
+      <div class="conn-actions">
+        <button class="btn btn-ghost btn-sm" type="button" id="agent-open-connection">Connection settings</button>
+      </div>
     </div>
     <div class="field">
       <label for="agent-form-desc">Description (optional)</label>
@@ -757,6 +754,18 @@
           <span class="palette-desc">The original warm paper and terracotta.</span>
         </button>
 
+        <button type="button" class="palette-card" role="radio" aria-checked="false" data-palette="adobe">
+          <span class="palette-swatch" aria-hidden="true">
+            <i style="background:#F1E8DE"></i><i style="background:#EDE0D2"></i>
+            <i style="background:#E3D2BF"></i><i style="background:#BE7E58"></i>
+          </span>
+          <span class="palette-name">
+            Adobe
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 12 5 5L20 6" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>
+          <span class="palette-desc">Deeper adobe-brick warmth, richer and browner than Clay.</span>
+        </button>
+
         <button type="button" class="palette-card" role="radio" aria-checked="false" data-palette="blue">
           <span class="palette-swatch" aria-hidden="true">
             <i style="background:#ECF1F8"></i><i style="background:#E5EDF7"></i>
@@ -869,8 +878,8 @@
       <label for="conn-mode">How this page reaches the agent</label>
       <select id="conn-mode">
         <option value="m365">Recommended: Microsoft 365 Agents SDK (requires Entra setup)</option>
-        <option value="claude">Claude &mdash; direct to the Anthropic API (requires an API key)</option>
-        <option value="gemini">Gemini &mdash; direct to Google's API (free tier, requires an API key)</option>
+        <option value="claude">Claude: direct to the Anthropic API (requires an API key)</option>
+        <option value="gemini">Gemini: direct to Google's API (free tier, requires an API key)</option>
         <option value="directline">Legacy: BIG A canvas (Token Endpoint required)</option>
         <option value="iframe">Legacy: Copilot Studio's own canvas in a frame</option>
         <option value="sso">Legacy: BIG A canvas with single sign-on</option>

@@ -29,9 +29,10 @@
 
      Kept as a whitelist rather than trusting whatever is in storage: the value
      goes straight onto an attribute of <html>, so it must be one of these. */
-  var PALETTES = ["clay", "blue", "grey", "orchid", "forest"];
+  var PALETTES = ["clay", "adobe", "blue", "grey", "orchid", "forest"];
   var PALETTE_LABEL = {
     clay: "Clay",
+    adobe: "Adobe",
     blue: "Pastel blue",
     grey: "Grey",
     orchid: "Pinkish purple",
@@ -412,7 +413,7 @@
    * The colourway. Written as a separate attribute from the theme so the two
    * compose: styles.css carries a light and a dark rule for every colourway,
    * and the browser picks the pair. Doing it as one combined value would have
-   * meant ten mutually exclusive themes instead of five plus a switch.
+   * meant twelve mutually exclusive themes instead of six plus a switch.
    */
   function applyPalette(p) {
     if (PALETTES.indexOf(p) === -1) p = "clay";
@@ -2267,7 +2268,7 @@
 
   function openConnectModal(opts) {
     opts = opts || {};
-    var agent = currentAgent();
+    var agent = opts.agent || currentAgent();
 
     // Default to editing whichever scope already holds settings: if this agent
     // has its own, that is almost certainly what needs changing.
@@ -2721,7 +2722,13 @@
     });
   }
 
-  function saveAgent() {
+  /**
+   * afterSave, if given, is called with the saved agent once everything else
+   * here has finished — used by the "Connection settings" button in this
+   * same modal to jump straight there for the agent just saved, rather than
+   * whichever agent happened to be active.
+   */
+  function saveAgent(afterSave) {
     var name = $("#agent-form-name").value.trim();
     var modeSel = $("#agent-form-mode");
     var mode = modeSel ? modeSel.value : "";
@@ -2787,6 +2794,7 @@
       // effect now; a rename alone does not justify tearing down a live
       // conversation.
       if ((urlChanged || modeChanged) && existing.id === state.activeAgent) connectActiveChat();
+      if (afterSave) afterSave(existing);
       return;
     }
 
@@ -2816,6 +2824,7 @@
     closeModals();
     toast("Added " + name);
     newChat();
+    if (afterSave) afterSave(a);
   }
 
   /** Flip one agent's sidebar visibility. */
@@ -3154,7 +3163,13 @@
       var err = $("#ask-error");
       if (!err.hidden) err.hidden = true;
     });
-    $("#agent-save").addEventListener("click", saveAgent);
+    $("#agent-save").addEventListener("click", function () { saveAgent(); });
+    var openConn = $("#agent-open-connection");
+    if (openConn) {
+      openConn.addEventListener("click", function () {
+        saveAgent(function (agent) { openConnectModal({ agent: agent, scope: "agent" }); });
+      });
+    }
     $("#settings-btn").addEventListener("click", function () { openModal("#settings-modal"); showStorageNote(); });
     $("#shortcuts-btn").addEventListener("click", function () { openModal("#shortcuts-modal"); });
 

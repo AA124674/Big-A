@@ -272,6 +272,50 @@
   --clay-ink:     #AEDCC0;
 }
 
+/* ---------- Adobe ----------
+   A deeper, browner terracotta than the default Clay — same warm family,
+   pushed further toward adobe-brick. --clay/--clay-ink are the two colours
+   this was asked for; --clay-hover and the wash/paper/line ramps are
+   derived from them using the same proportions the other colourways use
+   relative to their own accent. */
+
+:root[data-palette="adobe"]:not([data-theme="dark"]) {
+  --paper:        #F1E8DE;
+  --surface:      #FFFFFF;
+  --surface-sunk: #F6EFE7;
+  --sidebar:      #EDE0D2;
+  --overlay:      rgba(38, 23, 14, 0.45);
+
+  --ink:          #1D140D;
+  --ink-soft:     #46362A;
+  --ink-muted:    #7A6A5A;
+  --ink-faint:    #AA9986;
+
+  --line:         #E3D2BF;
+  --line-strong:  #D0B99E;
+
+  --clay:         #BE7E58;
+  --clay-hover:   #AC7050;
+  --clay-wash:    #F3E5D9;
+  --clay-ink:     #8B5642;
+}
+
+:root[data-theme="dark"][data-palette="adobe"] {
+  --paper:        #241C15;
+  --surface:      #2E241B;
+  --surface-sunk: #291F17;
+  --sidebar:      #1C1610;
+  --overlay:      rgba(0, 0, 0, .62);
+
+  --line:         #3D2F22;
+  --line-strong:  #52402E;
+
+  --clay:         #CE916D;
+  --clay-hover:   #D5A585;
+  --clay-wash:    #332822;
+  --clay-ink:     #DDA98C;
+}
+
 /* ---------- Reset ---------- */
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -1595,7 +1639,9 @@ body.zen .chat-col { height: 100%; }
   border: 1px solid var(--line);
   border-radius: 4px;
   padding: 1px 5px;
-  word-break: break-all;
+  /* Only break a genuinely unbreakable long token (a URL, a GUID); short
+     snippets like <iframe> must still wrap as whole words, not mid-word. */
+  overflow-wrap: anywhere;
 }
 .req {
   font-size: 10.5px;
@@ -1628,7 +1674,7 @@ body.zen .chat-col { height: 100%; }
   border: 1px solid var(--line);
   border-radius: 4px;
   padding: 1px 5px;
-  word-break: break-all;
+  overflow-wrap: anywhere;
 }
 .conn-account {
   display: flex;
