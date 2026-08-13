@@ -898,12 +898,12 @@ body.zen .chat-col { height: 100%; }
 }
 
 .chat-thread {
-  max-width: 760px;
+  max-width: 1040px;
   margin: 0 auto;
   padding: 28px 28px 8px;
   display: flex;
   flex-direction: column;
-  gap: 26px;
+  gap: 20px;
 }
 
 /* ---- Empty state ---- */
@@ -1171,7 +1171,7 @@ body.zen .chat-col { height: 100%; }
 .composer-wrap {
   flex: 0 0 auto;
   padding: 10px 28px 14px;
-  max-width: 760px;
+  max-width: 1040px;
   width: 100%;
   margin: 0 auto;
   background: linear-gradient(to top, var(--paper) 62%, transparent);

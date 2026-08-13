@@ -1,9 +1,9 @@
 # BIG A
 
 A static, single-page front end for a Microsoft Copilot Studio agent — or for
-Claude or Gemini, talked to directly. It is plain HTML, CSS and JavaScript —
-no build step, no framework, no server, no dependencies. Drop the folder into
-a GitHub Pages repository and it runs.
+Claude, Gemini, or any model on OpenRouter, talked to directly. It is plain
+HTML, CSS and JavaScript — no build step, no framework, no server, no
+dependencies. Drop the folder into a GitHub Pages repository and it runs.
 
 ## Start here: which mode should I use?
 
@@ -13,33 +13,37 @@ string and do not expose an anonymous Direct Line Token Endpoint. The Agents
 SDK mode keeps BIG A's native, copyable, saved chat canvas, but requires Entra
 ID user sign-in.
 
-**Claude and Gemini are separate, first-class modes**, for talking to a model
-directly instead of a Copilot Studio agent. Both use the same native canvas —
-saved history, streaming, copy buttons, file drops — but call the provider's
-API directly from this browser with your own API key, so neither needs an
-Entra registration or an agent to publish. Gemini's key is free to create,
-with no credit card, and stays within Google's free-tier quota as long as a
-Flash-class model is selected; Claude's is a normal paid API key.
+**Claude, Gemini and OpenRouter are separate, first-class modes**, for talking
+to a model directly instead of a Copilot Studio agent. All three use the same
+native canvas — saved history, streaming, copy buttons, file drops — but call
+the provider's API directly from this browser with your own API key, so none
+of them needs an Entra registration or an agent to publish. Gemini's key is
+free to create, with no credit card, and stays within Google's free-tier
+quota as long as a Flash-class model is selected. OpenRouter's key is also
+free to create and can reach a rotating catalog of genuinely free models
+across many providers, alongside every paid one, through the one key. Claude's
+key is a normal paid API key.
 
 | Mode | Setup needed | Notes |
 | --- | --- | --- |
 | **Microsoft 365 Agents SDK** (default) | Agents SDK connection string and an Entra single-page application | Uses the authenticated Direct-to-Engine protocol. Requires delegated `CopilotStudio.Copilots.Invoke`, admin consent, and user sign-in. |
 | **Claude** | An Anthropic API key | Talks to the Anthropic API directly from this browser. No Copilot Studio agent, no Entra app, no sign-in — just a key. Billed per use. |
 | **Gemini** | A free Gemini API key | Talks to Google's Gemini API directly from this browser. No Copilot Studio agent, no Entra app, no sign-in, no credit card — just a key, and Flash-class models stay within Google's free tier. |
+| **OpenRouter** | A free OpenRouter API key | Talks to OpenRouter's unified API directly from this browser. One key reaches hundreds of models from dozens of providers, including a live, rotating catalog of $0 ones. No Copilot Studio agent, no Entra app, no sign-in. |
 | **Legacy embed (iframe)** | None | Uses Copilot Studio's canvas in a frame. BIG A cannot style, read, copy, search, or save the messages inside it. |
 | **Legacy Direct Line canvas** | A Token Endpoint shown by Copilot Studio | Only for older anonymous agents. It is unavailable if the Channels page does not show a Token Endpoint. |
 | **Legacy Direct Line with single sign-on** | Token Endpoint and Entra setup | Retained for older agents that still expose Direct Line. |
 
 ### Why the mode matters
 
-The Agents SDK, Claude, Gemini, and legacy Direct Line modes render every
-message in BIG A. This enables per-message copy buttons, saved local history,
-themes, the workbench, and search. The iframe loads another origin, so the
-browser prevents BIG A from reading or changing its contents.
+The Agents SDK, Claude, Gemini, OpenRouter, and legacy Direct Line modes
+render every message in BIG A. This enables per-message copy buttons, saved
+local history, themes, the workbench, and search. The iframe loads another
+origin, so the browser prevents BIG A from reading or changing its contents.
 
 Modes are stored per agent. One agent can talk to Claude, another to Gemini,
-another to the Agents SDK, or legacy Direct Line. Set the mode when adding an
-agent or in **Connection settings**.
+another to OpenRouter, another to the Agents SDK, or legacy Direct Line. Set
+the mode when adding an agent or in **Connection settings**.
 
 ## Adding an agent
 
@@ -50,9 +54,10 @@ embed code that Copilot Studio gives you. The `<iframe>` wrapper is stripped
 automatically and only the address is kept, so there is no need to hunt for the
 `src` by hand.
 
-Choosing **Claude** or **Gemini** as the mode hides the URL box — neither has
-a Copilot Studio address. Save the agent, then open its **Connection
-settings** to add an API key and pick a model.
+Choosing **Claude**, **Gemini** or **OpenRouter** as the mode hides the URL
+box — none of them has a Copilot Studio address. Save the agent, then use the
+**Connection settings** button right there in the same modal to add an API
+key and pick a model.
 
 ## Setup: the Microsoft 365 Agents SDK
 
@@ -137,7 +142,7 @@ This is the whole setup, and it is much shorter than the Agents SDK's:
 
 1. **Settings → Add an agent** (or **Connection settings** for an existing
    one). Give it a name and set **How this agent connects** to **Claude**.
-2. Save the agent, then open its **Connection settings**.
+2. Use the **Connection settings** button in that same modal — it saves what you just entered and takes you straight there.
 3. Paste an API key from
    [console.anthropic.com → Settings → API keys](https://console.anthropic.com/settings/keys).
 4. Pick a model — Claude Sonnet 5 is a reasonable default — and optionally add
@@ -181,7 +186,7 @@ The same idea as the Claude mode above, but the API key itself costs nothing:
 
 1. **Settings → Add an agent** (or **Connection settings** for an existing
    one). Give it a name and set **How this agent connects** to **Gemini**.
-2. Save the agent, then open its **Connection settings**.
+2. Use the **Connection settings** button in that same modal — it saves what you just entered and takes you straight there.
 3. Create a free key at
    [aistudio.google.com → Get API key](https://aistudio.google.com/apikey) —
    no credit card required.
@@ -209,6 +214,56 @@ The same idea as the Claude mode above, but the API key itself costs nothing:
   only in this browser and only ever sent to
   `generativelanguage.googleapis.com` — is identical to the Claude mode
   above; see its notes for the detail.
+
+## Setup: OpenRouter, one key across hundreds of models
+
+The same idea again, but instead of one provider this is a router in front of
+dozens of them — OpenAI, Anthropic, Google, Meta, Mistral, DeepSeek, Qwen and
+many more — including a catalog of genuinely free models that rotates as
+providers add and retire them:
+
+1. **Settings → Add an agent** (or **Connection settings** for an existing
+   one). Give it a name and set **How this agent connects** to **OpenRouter**.
+2. Use the **Connection settings** button in that same modal — it saves what
+   you just entered and takes you straight there.
+3. Create a free key at
+   [openrouter.ai → Keys](https://openrouter.ai/keys) — no credit card
+   required.
+4. Click **Load free models** to fetch today's $0 catalog live from
+   OpenRouter and pick one, or type any model ID directly (paid ones
+   included) if it's already known.
+5. Optionally add a system prompt, then **Test connection** and **Save &
+   connect**.
+
+**Why the model list is not just a dropdown of names, like Claude's and
+Gemini's:** OpenRouter's free-model roster is far more volatile than either —
+models get added and pulled with little notice as the underlying providers
+change their own offerings. Hardcoding a "current free models" list here
+would be wrong within days, so **Load free models** reads OpenRouter's own
+live catalog ([`GET /api/v1/models`](https://openrouter.ai/models), the same
+data behind [openrouter.ai/models](https://openrouter.ai/models)) instead of
+guessing. The **Custom model ID** field is always available as a fallback —
+useful for a brand-new model this page has not fetched yet, or for
+deliberately picking a paid one.
+
+**Other things worth knowing:**
+
+- **Free models are rate-limited more tightly than paid ones**, and can queue
+  or be briefly unavailable under load — expected for a $0 tier spread across
+  many providers, not a fault. If one is being flaky, **Load free models**
+  again and try a different one.
+- **Only images attach natively here.** Unlike Claude and Gemini, there is no
+  single standard way to send a PDF across every provider OpenRouter proxies
+  to, so a PDF attachment shows up to the model only as a note that a file
+  was there, the same graceful fallback any other unsupported file type
+  already gets.
+- A small `X-OpenRouter-Title` header is sent with every request, identifying
+  this as "BIG A" for OpenRouter's own attribution — a fixed, generic string,
+  not this deployment's actual address, so nothing about where this page is
+  hosted is disclosed.
+- Everything else — permanent local history, no server-side tools, the API
+  key living only in this browser and only ever sent to `openrouter.ai` — is
+  identical to the Claude and Gemini modes above.
 
 ## Troubleshooting
 
@@ -295,35 +350,42 @@ These are real constraints, not oversights:
   none of these restrictions. The frame remains available as a fallback.
 - **Web search, charts and tools are agent-side features of Copilot Studio.**
   BIG A renders their output and reports their progress, but cannot switch
-  them on — configure those in Copilot Studio. Neither the Claude nor the
-  Gemini mode has an equivalent yet either; both are plain conversation, with
-  no server-side tools.
+  them on — configure those in Copilot Studio. None of the Claude, Gemini or
+  OpenRouter modes has an equivalent yet either; all three are plain
+  conversation, with no server-side tools.
 - **Conversations expire server-side** after a period of inactivity. Your
   transcript is kept locally forever and always displayed, but once a
   conversation has expired the *agent* no longer remembers those earlier turns.
   BIG A opens a fresh conversation automatically and replays the turn you were
-  sending, so you will not lose a message. (This does not apply to the Claude
-  or Gemini modes: neither has a server-side conversation to expire, since the
-  whole visible transcript is resent on every turn.)
-- **Claude and Gemini attachments are capped at 5 MB each**, and are re-sent
-  — re-read from local storage and re-uploaded — on every later turn of the
-  same chat, since neither API has any memory of its own between requests.
-  Long conversations with several large images or PDFs will therefore use
-  more bandwidth (and, for Claude, tokens) per turn as they grow.
+  sending, so you will not lose a message. (This does not apply to the Claude,
+  Gemini or OpenRouter modes: none has a server-side conversation to expire,
+  since the whole visible transcript is resent on every turn.)
+- **Claude, Gemini and OpenRouter attachments are capped at 5 MB each**, and
+  are re-sent — re-read from local storage and re-uploaded — on every later
+  turn of the same chat, since none of the three APIs has any memory of its
+  own between requests. Long conversations with several large images (or,
+  for Claude and Gemini, PDFs) will therefore use more bandwidth, and on a
+  paid key more tokens, per turn as they grow. OpenRouter only attaches
+  images natively; see its setup section above for what happens to a PDF
+  there.
 - **Gemini's free tier is rate-limited and may train on your prompts.**
   Google's no-cost quota is real but bounded — daily and per-minute request
   caps that Google adjusts periodically, tighter on Pro-tier models than on
   Flash — and, unlike the paid tier, free-tier requests may be used to
   improve Google's models. See the Gemini setup section above.
+- **OpenRouter's free models rotate, and are more tightly rate-limited than
+  paid ones.** The catalog is fetched live rather than hardcoded for exactly
+  this reason — see its setup section above.
 
 ## Where your data lives
 
 Everything — chats, the full message transcript, projects, attachments, and
-any Claude or Gemini API key you add — is stored **on your machine** in
-IndexedDB, under the origin the site is served from. Nothing is sent anywhere
-except the messages you send to your agent (and, for the Claude and Gemini
-modes, straight to `api.anthropic.com` or `generativelanguage.googleapis.com`
-respectively); connection settings, including either API key, never leave the
+any Claude, Gemini or OpenRouter API key you add — is stored **on your
+machine** in IndexedDB, under the origin the site is served from. Nothing is
+sent anywhere except the messages you send to your agent (and, for the
+Claude, Gemini and OpenRouter modes, straight to `api.anthropic.com`,
+`generativelanguage.googleapis.com` or `openrouter.ai` respectively);
+connection settings, including any of the three API keys, never leave the
 browser except in that outgoing request.
 
 That means transcripts survive page closure, browser restart and machine
@@ -379,7 +441,7 @@ policy as a real header, which additionally covers `frame-ancestors` and
 `sandbox` (both ignored in a meta policy):
 
 ```
-Content-Security-Policy: default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://unpkg.com https://cdn.botframework.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' blob: https://api.anthropic.com https://generativelanguage.googleapis.com https://login.microsoftonline.com https://login.microsoftonline.us https://login.partner.microsoftonline.cn https://*.environment.api.powerplatform.com https://*.environment.api.preprod.powerplatform.com https://*.environment.api.gov.powerplatform.microsoft.us https://*.environment.api.high.powerplatform.microsoft.us https://*.environment.api.appsplatform.us https://*.environment.api.powerplatform.partner.microsoftonline.cn https://*.api.powerplatform.com https://powerva.microsoft.com https://*.powerva.microsoft.com https://copilotstudio.microsoft.com https://directline.botframework.com https://*.directline.botframework.com https://*.botframework.com https://*.blob.core.windows.net https://cdn.jsdelivr.net https://unpkg.com https://cdn.botframework.com wss://directline.botframework.com wss://*.directline.botframework.com; frame-src 'self' blob: https://copilotstudio.microsoft.com https://powerva.microsoft.com https://*.powerva.microsoft.com https://*.powervirtualagents.com https://*.botframework.com https://*.blob.core.windows.net; media-src 'self' blob: https:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'
+Content-Security-Policy: default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://unpkg.com https://cdn.botframework.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' blob: https://api.anthropic.com https://generativelanguage.googleapis.com https://openrouter.ai https://login.microsoftonline.com https://login.microsoftonline.us https://login.partner.microsoftonline.cn https://*.environment.api.powerplatform.com https://*.environment.api.preprod.powerplatform.com https://*.environment.api.gov.powerplatform.microsoft.us https://*.environment.api.high.powerplatform.microsoft.us https://*.environment.api.appsplatform.us https://*.environment.api.powerplatform.partner.microsoftonline.cn https://*.api.powerplatform.com https://powerva.microsoft.com https://*.powerva.microsoft.com https://copilotstudio.microsoft.com https://directline.botframework.com https://*.directline.botframework.com https://*.botframework.com https://*.blob.core.windows.net https://cdn.jsdelivr.net https://unpkg.com https://cdn.botframework.com wss://directline.botframework.com wss://*.directline.botframework.com; frame-src 'self' blob: https://copilotstudio.microsoft.com https://powerva.microsoft.com https://*.powerva.microsoft.com https://*.powervirtualagents.com https://*.botframework.com https://*.blob.core.windows.net; media-src 'self' blob: https:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'
 ```
 
 A single-tenant deployment can narrow it further. If only the BGS environment is
@@ -398,11 +460,12 @@ Two consequences are worth knowing before editing it:
   in `frame-src`. Framing a third-party canvas needs its host added there.
 - If the CDN mirrors are removed from `script-src`, a vendored
   `assets/vendor/msal-browser.min.js` becomes mandatory.
-- If the Claude or Gemini modes are never used, `https://api.anthropic.com`
-  and/or `https://generativelanguage.googleapis.com` can be removed from
-  `connect-src` too. Pointing either mode's optional **API base URL** at a
-  compatible proxy instead of the provider's own API needs that proxy's host
-  added here, or the browser blocks it.
+- If the Claude, Gemini or OpenRouter modes are never used, their host
+  (`https://api.anthropic.com`, `https://generativelanguage.googleapis.com`,
+  `https://openrouter.ai`) can be removed from `connect-src` too. Pointing
+  any of the three modes' optional **API base URL** at a compatible proxy
+  instead of the provider's own API needs that proxy's host added here, or
+  the browser blocks it.
 
 ## Keyboard
 
@@ -493,6 +556,7 @@ without a picture keep their initials on a stable, name-derived tint.
 | `assets/js/m365agents.js` | **Microsoft 365 Agents SDK / Direct-to-Engine client** — current transport |
 | `assets/js/anthropic.js` | **Claude client** — talks to the Anthropic Messages API directly |
 | `assets/js/gemini.js` | **Gemini client** — talks to Google's Gemini API directly, free tier included |
+| `assets/js/openrouter.js` | **OpenRouter client** — talks to OpenRouter's unified API, free-model catalog fetched live |
 | `assets/js/directline.js` | Direct Line 3.0 client — legacy transport, kept as a fallback |
 | `assets/js/connect.js` | MSAL sign-in, shared by both authenticated transports |
 | `assets/js/chat.js` | The conversation surface, streaming, previews and composer |
@@ -544,7 +608,7 @@ server-side conversation to resume), but is a different API end to end: one
 authenticated with an `x-goog-api-key` header, answered with a stream of
 `GenerateContentResponse` JSON objects (`candidates[0].content.parts[]`)
 rather than Anthropic's typed SSE events. `assets/js/gemini.js` translates
-that into the same `typing` / `message` activity shape as the other three
+that into the same `typing` / `message` activity shape as the other
 transports. It deliberately targets this classic `generateContent` REST
 surface rather than Google's newer Interactions API
 (`{base}/v1beta/interactions`) — as of this writing the Interactions API's
@@ -554,6 +618,25 @@ so it fails outright from a browser, while the classic endpoint used here
 answers CORS preflights correctly for `content-type` and `x-goog-api-key`.
 Worth re-checking if Google closes that gap, since the Interactions API is
 where new Gemini features land first.
+
+**OpenRouter** speaks the OpenAI Chat Completions wire format rather than a
+bespoke one: one `POST {base}/api/v1/chat/completions` per turn, `stream:
+true`, authenticated with a plain `Authorization: Bearer` header, answered
+with a stream of `choices[0].delta.content` chunks terminated by a literal
+`data: [DONE]` line. The system prompt travels as an ordinary leading
+`{role:"system"}` message rather than a separate field, unlike both Claude
+and Gemini. `assets/js/openrouter.js` translates the stream into the same
+activity shape as the other three. Two details worth knowing if this ever
+needs debugging: OpenRouter periodically sends an SSE *comment* line
+(`: OPENROUTER PROCESSING`) as a keep-alive during long waits, which must be
+skipped before it is ever handed to `JSON.parse` (an SSE comment is not
+JSON); and a mid-generation failure arrives as a `data:` event with an
+`error` field sitting at the top level alongside `choices`, not nested
+inside one, terminating the stream with `finish_reason: "error"`. The model
+list in Connection settings is populated by `OpenRouterClient.fetchModels()`,
+which reads OpenRouter's own public, unauthenticated `GET /api/v1/models`
+catalog live rather than trusting a hardcoded list — see the OpenRouter
+setup section above for why that matters here specifically.
 
 ## Deploying to GitHub Pages
 

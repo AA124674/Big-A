@@ -15,7 +15,7 @@
      needs its host added to frame-src; a Claude- or Gemini-compatible proxy
      other than api.anthropic.com / generativelanguage.googleapis.com needs
      its host added to connect-src. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://unpkg.com https://cdn.botframework.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' blob: https://api.anthropic.com https://generativelanguage.googleapis.com https://login.microsoftonline.com https://login.microsoftonline.us https://login.partner.microsoftonline.cn https://*.environment.api.powerplatform.com https://*.environment.api.preprod.powerplatform.com https://*.environment.api.gov.powerplatform.microsoft.us https://*.environment.api.high.powerplatform.microsoft.us https://*.environment.api.appsplatform.us https://*.environment.api.powerplatform.partner.microsoftonline.cn https://*.api.powerplatform.com https://powerva.microsoft.com https://*.powerva.microsoft.com https://copilotstudio.microsoft.com https://directline.botframework.com https://*.directline.botframework.com https://*.botframework.com https://*.blob.core.windows.net https://cdn.jsdelivr.net https://unpkg.com https://cdn.botframework.com wss://directline.botframework.com wss://*.directline.botframework.com; frame-src 'self' blob: https://copilotstudio.microsoft.com https://powerva.microsoft.com https://*.powerva.microsoft.com https://*.powervirtualagents.com https://*.botframework.com https://*.blob.core.windows.net; media-src 'self' blob: https:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://unpkg.com https://cdn.botframework.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' blob: https://api.anthropic.com https://generativelanguage.googleapis.com https://openrouter.ai https://login.microsoftonline.com https://login.microsoftonline.us https://login.partner.microsoftonline.cn https://*.environment.api.powerplatform.com https://*.environment.api.preprod.powerplatform.com https://*.environment.api.gov.powerplatform.microsoft.us https://*.environment.api.high.powerplatform.microsoft.us https://*.environment.api.appsplatform.us https://*.environment.api.powerplatform.partner.microsoftonline.cn https://*.api.powerplatform.com https://powerva.microsoft.com https://*.powerva.microsoft.com https://copilotstudio.microsoft.com https://directline.botframework.com https://*.directline.botframework.com https://*.botframework.com https://*.blob.core.windows.net https://cdn.jsdelivr.net https://unpkg.com https://cdn.botframework.com wss://directline.botframework.com wss://*.directline.botframework.com; frame-src 'self' blob: https://copilotstudio.microsoft.com https://powerva.microsoft.com https://*.powerva.microsoft.com https://*.powervirtualagents.com https://*.botframework.com https://*.blob.core.windows.net; media-src 'self' blob: https:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
 <title>BIG A — your intelligent workspace</title>
@@ -562,6 +562,7 @@
         <option value="m365">Recommended: Microsoft 365 Agents SDK</option>
         <option value="claude">Claude: direct to the Anthropic API</option>
         <option value="gemini">Gemini: direct to Google's free-tier API</option>
+        <option value="openrouter">OpenRouter: one key, 100s of models, many free</option>
         <option value="directline">Legacy: BIG A canvas (Token Endpoint required)</option>
         <option value="iframe">Legacy: Copilot Studio's own canvas in a frame</option>
       </select>
@@ -573,6 +574,9 @@
       <p class="hint" id="agent-form-gemini-note" hidden>Gemini agents talk straight to Google's API,
         so there is no Copilot Studio address to paste. Use <strong>Connection settings</strong> below
         to add a free API key and pick a model.</p>
+      <p class="hint" id="agent-form-openrouter-note" hidden>OpenRouter agents talk straight to
+        OpenRouter's API, so there is no Copilot Studio address to paste. Use
+        <strong>Connection settings</strong> below to add an API key and pick a model.</p>
       <div class="conn-actions">
         <button class="btn btn-ghost btn-sm" type="button" id="agent-open-connection">Connection settings</button>
       </div>
@@ -880,6 +884,7 @@
         <option value="m365">Recommended: Microsoft 365 Agents SDK (requires Entra setup)</option>
         <option value="claude">Claude: direct to the Anthropic API (requires an API key)</option>
         <option value="gemini">Gemini: direct to Google's API (free tier, requires an API key)</option>
+        <option value="openrouter">OpenRouter: one key, 100s of models, many free (requires an API key)</option>
         <option value="directline">Legacy: BIG A canvas (Token Endpoint required)</option>
         <option value="iframe">Legacy: Copilot Studio's own canvas in a frame</option>
         <option value="sso">Legacy: BIG A canvas with single sign-on</option>
@@ -1100,6 +1105,89 @@
             <label for="conn-gemini-base-url">API base URL</label>
             <input type="text" id="conn-gemini-base-url" spellcheck="false"
                    placeholder="https://generativelanguage.googleapis.com">
+            <p class="hint">Only change this to point at a compatible proxy. A non-default host must also
+              be added to <code>connect-src</code> in the Content Security Policy in
+              <code>index.html</code>, or the browser will block it.</p>
+          </div>
+        </details>
+      </section>
+
+      <!-- ============ OpenRouter, one key across hundreds of models ============ -->
+      <section class="conn-step" id="conn-openrouter-fields" hidden>
+        <header class="conn-step-head">
+          <span class="conn-step-no">1</span>
+          <span class="conn-step-title">
+            <strong>Add an OpenRouter API key</strong>
+            <small>Required, but the free-model catalog costs nothing to use: requests go straight from
+              this browser to openrouter.ai &mdash; there is no server in between, so nothing but your
+              messages ever leaves this device.</small>
+          </span>
+        </header>
+
+        <div class="field">
+          <label for="conn-openrouter-key">API key</label>
+          <input type="password" id="conn-openrouter-key" spellcheck="false" autocomplete="off"
+                 placeholder="sk-or-v1-&hellip;">
+          <div class="conn-inline-acts">
+            <button class="btn btn-ghost btn-sm" id="conn-openrouter-key-toggle" type="button">Show</button>
+          </div>
+          <p class="hint">Create a free key at <a href="https://openrouter.ai/keys" target="_blank"
+            rel="noopener">openrouter.ai &rsaquo; Keys</a> &mdash; no credit card needed for free models.
+            As with any key stored here, anyone with access to this browser can read it back out of its
+            network requests.</p>
+        </div>
+
+        <div class="field">
+          <label for="conn-openrouter-model">Model</label>
+          <select id="conn-openrouter-model">
+            <option value="__custom">Custom model ID&hellip;</option>
+          </select>
+          <input type="text" id="conn-openrouter-model-custom" spellcheck="false"
+                 placeholder="e.g. meta-llama/llama-3.1-8b-instruct:free">
+          <div class="conn-inline-acts">
+            <button class="btn btn-ghost btn-sm" id="conn-openrouter-load-models" type="button">Load free models</button>
+            <a class="hint" href="https://openrouter.ai/models?max_price=0" target="_blank" rel="noopener">Browse the full catalog &rarr;</a>
+          </div>
+          <p class="hint">OpenRouter's free-model roster changes often as providers rotate models in and
+            out, so it is deliberately not hardcoded here &mdash; <strong>Load free models</strong>
+            fetches today's list live. Type any model ID directly (paid models included) if already
+            known.</p>
+        </div>
+
+        <div class="field">
+          <label for="conn-openrouter-system">System prompt (optional)</label>
+          <textarea id="conn-openrouter-system" rows="3" spellcheck="true"
+                    placeholder="You are a helpful assistant for..."></textarea>
+          <p class="hint">Sets this agent&rsquo;s persona and instructions. Leave it blank for a plain
+            model.</p>
+        </div>
+
+        <div class="conn-actions">
+          <button class="btn btn-ghost btn-sm" id="conn-openrouter-test" type="button">Test connection</button>
+        </div>
+        <p class="hint conn-target-line" id="conn-openrouter-resolved"></p>
+
+        <details class="setup-help" id="conn-openrouter-advanced">
+          <summary>Optional settings &mdash; you almost certainly do not need these</summary>
+
+          <div class="field-row">
+            <div class="field">
+              <label for="conn-openrouter-max-tokens">Max output tokens</label>
+              <input type="text" id="conn-openrouter-max-tokens" spellcheck="false" placeholder="4096">
+              <p class="hint">Upper bound on each reply. Higher costs more time, and on a paid model,
+                more money.</p>
+            </div>
+            <div class="field">
+              <label for="conn-openrouter-temperature">Temperature</label>
+              <input type="text" id="conn-openrouter-temperature" spellcheck="false" placeholder="Default">
+              <p class="hint">Leave blank for the model&rsquo;s default. Higher is more varied, lower is
+                more focused.</p>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="conn-openrouter-base-url">API base URL</label>
+            <input type="text" id="conn-openrouter-base-url" spellcheck="false" placeholder="https://openrouter.ai">
             <p class="hint">Only change this to point at a compatible proxy. A non-default host must also
               be added to <code>connect-src</code> in the Content Security Policy in
               <code>index.html</code>, or the browser will block it.</p>
@@ -1403,6 +1491,7 @@
 <script src="assets/js/m365agents.js"></script>
 <script src="assets/js/anthropic.js"></script>
 <script src="assets/js/gemini.js"></script>
+<script src="assets/js/openrouter.js"></script>
 <script src="assets/js/connect.js"></script>
 <script src="assets/js/chat.js"></script>
 <script src="assets/js/app.js"></script>

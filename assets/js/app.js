@@ -173,7 +173,14 @@
       geminiSystemPrompt: "",
       geminiMaxTokens: "",
       geminiTemperature: "",
-      geminiBaseUrl: ""
+      geminiBaseUrl: "",
+      // OpenRouter, one key across hundreds of models.
+      openrouterApiKey: "",
+      openrouterModel: "",
+      openrouterSystemPrompt: "",
+      openrouterMaxTokens: "",
+      openrouterTemperature: "",
+      openrouterBaseUrl: ""
     },
     artifact: { title: "Untitled document", type: "markdown", source: "" },
     log: []
@@ -244,7 +251,7 @@
           if (typeof conn[k] === "string") state.connection[k] = conn[k];
         });
       }
-      if (["iframe", "m365", "directline", "sso", "claude", "gemini"].indexOf(state.connection.mode) === -1) {
+      if (["iframe", "m365", "directline", "sso", "claude", "gemini", "openrouter"].indexOf(state.connection.mode) === -1) {
         state.connection.mode = "m365";
       }
 
@@ -309,7 +316,9 @@
     "connectionString", "directConnectUrl", "environmentId", "schemaName",
     "cloud", "agentType", "clientId", "tenantId", "scope", "tokenEndpoint",
     "claudeApiKey", "claudeModel", "claudeSystemPrompt", "claudeMaxTokens", "claudeTemperature", "claudeBaseUrl",
-    "geminiApiKey", "geminiModel", "geminiSystemPrompt", "geminiMaxTokens", "geminiTemperature", "geminiBaseUrl"
+    "geminiApiKey", "geminiModel", "geminiSystemPrompt", "geminiMaxTokens", "geminiTemperature", "geminiBaseUrl",
+    "openrouterApiKey", "openrouterModel", "openrouterSystemPrompt", "openrouterMaxTokens",
+    "openrouterTemperature", "openrouterBaseUrl"
   ];
 
   /** The settings actually in force for one agent: its overrides over ours. */
@@ -464,6 +473,7 @@
     m365: "Microsoft 365 Agents SDK",
     claude: "Claude \u00b7 Anthropic API",
     gemini: "Gemini \u00b7 Google AI (free tier)",
+    openrouter: "OpenRouter",
     directline: "Legacy \u00b7 Direct Line, native canvas",
     sso: "Legacy \u00b7 Direct Line with single sign-on",
     iframe: "Legacy \u00b7 embedded frame"
@@ -689,6 +699,7 @@
     if (conn.mode === "m365") return connectViaAgentsSdk(agent);
     if (conn.mode === "claude") return connectViaClaude(agent);
     if (conn.mode === "gemini") return connectViaGemini(agent);
+    if (conn.mode === "openrouter") return connectViaOpenRouter(agent);
 
     var bearerStep = conn.mode === "sso" && global.Connect
       ? global.Connect.acquireToken(conn).then(function (res) {
@@ -873,6 +884,43 @@
 
     return Chat.open(state.activeChat, {
       transport: "gemini",
+      settings: settings
+    }).catch(function (err) {
+      setStatus("offline", err && err.message);
+      logEvent("Connection failed", err && err.message, "err");
+    });
+  }
+
+  function openrouterSettings(agent) {
+    var c = effectiveConn(agent);
+    return {
+      apiKey: c.openrouterApiKey,
+      model: c.openrouterModel,
+      systemPrompt: c.openrouterSystemPrompt,
+      maxTokens: c.openrouterMaxTokens,
+      temperature: c.openrouterTemperature,
+      baseUrl: c.openrouterBaseUrl
+    };
+  }
+
+  /** OpenRouter, one key across hundreds of models — no sign-in, just an API key. */
+  function connectViaOpenRouter(agent) {
+    var settings = openrouterSettings(agent);
+
+    if (!global.OpenRouterClient || !global.OpenRouterClient.isConfigured(settings)) {
+      setStatus("offline", "OpenRouter connection is not configured yet.");
+      logEvent("Connection settings needed", "Add the OpenRouter API key", "warn");
+      Chat.showSetupNeeded(
+        "This chat needs an OpenRouter API key. Open Connection settings and paste in a key from " +
+        "openrouter.ai \u203A Keys."
+      );
+      return Promise.resolve();
+    }
+
+    setStatus("connecting");
+
+    return Chat.open(state.activeChat, {
+      transport: "openrouter",
       settings: settings
     }).catch(function (err) {
       setStatus("offline", err && err.message);
@@ -1796,13 +1844,16 @@
     var mode = sel ? sel.value : "";
     var isClaude = mode === "claude";
     var isGemini = mode === "gemini";
+    var isOpenRouter = mode === "openrouter";
     var urlField = $("#agent-form-url-field");
     var claudeNote = $("#agent-form-claude-note");
     var geminiNote = $("#agent-form-gemini-note");
-    // Neither Claude nor Gemini has a Copilot Studio address to paste.
-    if (urlField) urlField.hidden = isClaude || isGemini;
+    var openrouterNote = $("#agent-form-openrouter-note");
+    // None of Claude, Gemini or OpenRouter has a Copilot Studio address to paste.
+    if (urlField) urlField.hidden = isClaude || isGemini || isOpenRouter;
     if (claudeNote) claudeNote.hidden = !isClaude;
     if (geminiNote) geminiNote.hidden = !isGemini;
+    if (openrouterNote) openrouterNote.hidden = !isOpenRouter;
   }
 
   /** Show the staged icon, or the initials that would be used instead. */
@@ -1899,7 +1950,11 @@
             "key, which is stored only in this browser and sent only to api.anthropic.com.",
     gemini: "Talks directly to Google's Gemini API from this browser, on the same native canvas \u2014 " +
             "saved history, copy buttons, file drops. Needs a Gemini API key, free to create with no " +
-            "credit card, stored only in this browser and sent only to generativelanguage.googleapis.com."
+            "credit card, stored only in this browser and sent only to generativelanguage.googleapis.com.",
+    openrouter: "Talks directly to OpenRouter's unified API from this browser, on the same native canvas " +
+                "\u2014 saved history, copy buttons, file drops. One key reaches hundreds of models across " +
+                "every major provider, including a rotating catalog of free ones. Stored only in this " +
+                "browser and sent only to openrouter.ai."
   };
 
   /** The agent the connection modal is currently editing, or null for global. */
@@ -1914,6 +1969,7 @@
     var needsSignIn = mode === "m365" || mode === "sso";
     var needsClaude = mode === "claude";
     var needsGemini = mode === "gemini";
+    var needsOpenRouter = mode === "openrouter";
 
     // The wrapper is only empty for modes with no fields at all, which no
     // longer happens: the embed mode has its own panel now.
@@ -1932,6 +1988,11 @@
     var geminiAdv = $("#conn-gemini-advanced");
     if (geminiAdv) geminiAdv.hidden = !needsGemini;
     if (needsGemini) syncGeminiModelField();
+    var openrouterFields = $("#conn-openrouter-fields");
+    if (openrouterFields) openrouterFields.hidden = !needsOpenRouter;
+    var openrouterAdv = $("#conn-openrouter-advanced");
+    if (openrouterAdv) openrouterAdv.hidden = !needsOpenRouter;
+    if (needsOpenRouter) syncOpenRouterModelField();
 
     // Only nag for the environment ID when it is actually unobtainable from
     // the URL, which is exactly the default-environment case.
@@ -1952,10 +2013,11 @@
       }
     }
     // Advanced settings only mean anything to the two direct transports.
-    // Claude and Gemini each have their own "Optional settings" block instead
-    // (#conn-claude-advanced / #conn-gemini-advanced above).
+    // Claude, Gemini and OpenRouter each have their own "Optional settings"
+    // block instead (#conn-claude-advanced / #conn-gemini-advanced /
+    // #conn-openrouter-advanced above).
     var adv = $("#conn-advanced");
-    if (adv) adv.hidden = mode === "iframe" || needsClaude || needsGemini;
+    if (adv) adv.hidden = mode === "iframe" || needsClaude || needsGemini || needsOpenRouter;
 
     // Number the visible steps, so "Step 2" is always the second thing seen.
     var signInNo = $("#conn-signin-no");
@@ -2126,7 +2188,13 @@
       geminiSystemPrompt: $("#conn-gemini-system").value.trim(),
       geminiMaxTokens: $("#conn-gemini-max-tokens").value.trim(),
       geminiTemperature: $("#conn-gemini-temperature").value.trim(),
-      geminiBaseUrl: $("#conn-gemini-base-url").value.trim()
+      geminiBaseUrl: $("#conn-gemini-base-url").value.trim(),
+      openrouterApiKey: $("#conn-openrouter-key").value.trim(),
+      openrouterModel: readOpenRouterModel(),
+      openrouterSystemPrompt: $("#conn-openrouter-system").value.trim(),
+      openrouterMaxTokens: $("#conn-openrouter-max-tokens").value.trim(),
+      openrouterTemperature: $("#conn-openrouter-temperature").value.trim(),
+      openrouterBaseUrl: $("#conn-openrouter-base-url").value.trim()
     };
   }
 
@@ -2202,6 +2270,100 @@
       if (custom) custom.value = value;
     }
     syncGeminiModelField();
+  }
+
+  /** Same idea as readClaudeModel(), for the OpenRouter model select. */
+  function readOpenRouterModel() {
+    var sel = $("#conn-openrouter-model");
+    if (!sel) return "";
+    if (sel.value === "__custom") {
+      var custom = $("#conn-openrouter-model-custom");
+      return custom ? custom.value.trim() : "";
+    }
+    return sel.value;
+  }
+
+  /** Show the free-text model box only when "Custom model ID…" is picked. */
+  function syncOpenRouterModelField() {
+    var sel = $("#conn-openrouter-model");
+    var custom = $("#conn-openrouter-model-custom");
+    if (!sel || !custom) return;
+    custom.hidden = sel.value !== "__custom";
+  }
+
+  /** Reverse of readOpenRouterModel(): put a stored model id back into the form. */
+  function setOpenRouterModelSelect(value) {
+    var sel = $("#conn-openrouter-model");
+    var custom = $("#conn-openrouter-model-custom");
+    if (!sel) return;
+    if (!value) {
+      sel.selectedIndex = 0;
+      if (custom) custom.value = "";
+    } else if ($$("option", sel).some(function (o) { return o.value === value; })) {
+      sel.value = value;
+      if (custom) custom.value = "";
+    } else {
+      sel.value = "__custom";
+      if (custom) custom.value = value;
+    }
+    syncOpenRouterModelField();
+  }
+
+  /**
+   * OpenRouter's free-model roster rotates too often to hardcode, so the
+   * select starts with only "Custom model ID…" and this fills it in from
+   * OpenRouter's own live catalog. Only $0-priced models are listed — the
+   * custom field remains the way to reach a paid one.
+   */
+  function populateOpenRouterModelSelect(models) {
+    var sel = $("#conn-openrouter-model");
+    if (!sel) return;
+    var current = readOpenRouterModel();
+    var free = models.filter(function (m) { return m.free; })
+      .sort(function (a, b) { return a.name.localeCompare(b.name); });
+
+    while (sel.firstChild) sel.removeChild(sel.firstChild);
+
+    if (free.length) {
+      var grp = document.createElement("optgroup");
+      grp.label = "Free (" + free.length + ")";
+      free.forEach(function (m) {
+        var opt = document.createElement("option");
+        opt.value = m.id;
+        opt.textContent = m.name + " \u2014 " + m.id;
+        grp.appendChild(opt);
+      });
+      sel.appendChild(grp);
+    }
+    var customOpt = document.createElement("option");
+    customOpt.value = "__custom";
+    customOpt.textContent = "Custom model ID\u2026";
+    sel.appendChild(customOpt);
+
+    setOpenRouterModelSelect(current || (free[0] && free[0].id) || "");
+  }
+
+  /** Fetches OpenRouter's live catalog and fills the model select from it. */
+  function loadOpenRouterModels() {
+    var btn = $("#conn-openrouter-load-models");
+    if (!btn || !global.OpenRouterClient) return;
+    var form = readConnForm();
+    var settings = { apiKey: form.openrouterApiKey, baseUrl: form.openrouterBaseUrl };
+
+    btn.disabled = true;
+    var was = btn.textContent;
+    btn.textContent = "Loading\u2026";
+
+    global.OpenRouterClient.fetchModels(settings).then(function (models) {
+      populateOpenRouterModelSelect(models);
+      var freeCount = models.filter(function (m) { return m.free; }).length;
+      toast(freeCount ? ("Loaded " + freeCount + " free models") : "No free models found right now");
+    }).catch(function (err) {
+      toast(err.message, "err");
+    }).then(function () {
+      btn.disabled = false;
+      btn.textContent = was;
+    });
   }
 
   /**
@@ -2327,6 +2489,18 @@
     $("#conn-gemini-base-url").value = c.geminiBaseUrl || "";
     var geminiResolved = $("#conn-gemini-resolved");
     if (geminiResolved) geminiResolved.textContent = "";
+    var openrouterKey = $("#conn-openrouter-key");
+    openrouterKey.value = c.openrouterApiKey || "";
+    openrouterKey.type = "password";
+    var openrouterKeyToggle = $("#conn-openrouter-key-toggle");
+    if (openrouterKeyToggle) openrouterKeyToggle.textContent = "Show";
+    setOpenRouterModelSelect(c.openrouterModel || "");
+    $("#conn-openrouter-system").value = c.openrouterSystemPrompt || "";
+    $("#conn-openrouter-max-tokens").value = c.openrouterMaxTokens || "";
+    $("#conn-openrouter-temperature").value = c.openrouterTemperature || "";
+    $("#conn-openrouter-base-url").value = c.openrouterBaseUrl || "";
+    var openrouterResolved = $("#conn-openrouter-resolved");
+    if (openrouterResolved) openrouterResolved.textContent = "";
     var redirect = location.origin + location.pathname;
     $("#conn-redirect").textContent = redirect;
     $("#conn-redirect-legacy").textContent = redirect;
@@ -2453,6 +2627,33 @@
       logEvent("Connection test passed", settings.model, "ok");
     }).catch(function (err) {
       $("#conn-gemini-resolved").textContent = err.message;
+      toast(err.message, "err");
+      logEvent("Connection test failed", err.message, "err");
+    }).then(function () {
+      btn.disabled = false;
+      btn.textContent = was;
+    });
+  }
+
+  /** Same idea as testGeminiConnection(), for the OpenRouter transport's own key + model. */
+  function testOpenRouterConnection() {
+    var btn = $("#conn-openrouter-test");
+    var s = readConnForm();
+    var settings = { apiKey: s.openrouterApiKey, model: s.openrouterModel, baseUrl: s.openrouterBaseUrl };
+    if (!global.OpenRouterClient || !global.OpenRouterClient.isConfigured(settings)) {
+      toast("Add your API key and choose a model first.", "err");
+      return;
+    }
+    btn.disabled = true;
+    var was = btn.textContent;
+    btn.textContent = "Testing…";
+
+    global.OpenRouterClient.testConnection(settings).then(function () {
+      $("#conn-openrouter-resolved").textContent = "Connected. The model answered successfully.";
+      toast("Connection works");
+      logEvent("Connection test passed", settings.model, "ok");
+    }).catch(function (err) {
+      $("#conn-openrouter-resolved").textContent = err.message;
       toast(err.message, "err");
       logEvent("Connection test failed", err.message, "err");
     }).then(function () {
@@ -2608,6 +2809,16 @@
         return;
       }
     }
+    if (mode === "openrouter") {
+      if (!form.openrouterApiKey) {
+        toast("Add your OpenRouter API key.", "err");
+        return;
+      }
+      if (!form.openrouterModel) {
+        toast("Choose a model, or enter a custom model ID.", "err");
+        return;
+      }
+    }
 
     var next = {
       mode: mode,
@@ -2632,7 +2843,13 @@
       geminiSystemPrompt: form.geminiSystemPrompt,
       geminiMaxTokens: form.geminiMaxTokens,
       geminiTemperature: form.geminiTemperature,
-      geminiBaseUrl: form.geminiBaseUrl
+      geminiBaseUrl: form.geminiBaseUrl,
+      openrouterApiKey: form.openrouterApiKey,
+      openrouterModel: form.openrouterModel,
+      openrouterSystemPrompt: form.openrouterSystemPrompt,
+      openrouterMaxTokens: form.openrouterMaxTokens,
+      openrouterTemperature: form.openrouterTemperature,
+      openrouterBaseUrl: form.openrouterBaseUrl
     };
 
     var sel = $("#conn-target");
@@ -2732,11 +2949,11 @@
     var name = $("#agent-form-name").value.trim();
     var modeSel = $("#agent-form-mode");
     var mode = modeSel ? modeSel.value : "";
-    // Claude and Gemini both talk straight to their own API, so there is no
-    // Copilot Studio address to require or extract here — that agent's
-    // credentials live in Connection settings instead, same as an Agents
-    // SDK agent's Entra details do.
-    var noUrlMode = mode === "claude" || mode === "gemini";
+    // Claude, Gemini and OpenRouter all talk straight to their own API, so
+    // there is no Copilot Studio address to require or extract here — that
+    // agent's credentials live in Connection settings instead, same as an
+    // Agents SDK agent's Entra details do.
+    var noUrlMode = mode === "claude" || mode === "gemini" || mode === "openrouter";
 
     var raw = $("#agent-form-url").value.trim();
     // Copilot Studio hands out a whole HTML document, so accept that too and
@@ -3228,6 +3445,21 @@
     }
     var geminiTest = $("#conn-gemini-test");
     if (geminiTest) geminiTest.addEventListener("click", testGeminiConnection);
+    var openrouterModelSel = $("#conn-openrouter-model");
+    if (openrouterModelSel) openrouterModelSel.addEventListener("change", syncOpenRouterModelField);
+    var openrouterKeyToggle = $("#conn-openrouter-key-toggle");
+    if (openrouterKeyToggle) {
+      openrouterKeyToggle.addEventListener("click", function () {
+        var input = $("#conn-openrouter-key");
+        var show = input.type === "password";
+        input.type = show ? "text" : "password";
+        this.textContent = show ? "Hide" : "Show";
+      });
+    }
+    var openrouterTest = $("#conn-openrouter-test");
+    if (openrouterTest) openrouterTest.addEventListener("click", testOpenRouterConnection);
+    var openrouterLoad = $("#conn-openrouter-load-models");
+    if (openrouterLoad) openrouterLoad.addEventListener("click", loadOpenRouterModels);
     ["#conn-env-id", "#conn-legacy-env-id", "#conn-schema", "#conn-cloud",
       "#conn-agent-type", "#conn-direct-url"].forEach(function (sel) {
       $(sel).addEventListener("change", syncConnFields);

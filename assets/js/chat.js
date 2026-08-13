@@ -878,6 +878,7 @@
     var transport = opts.transport === "directline" ? "directline"
       : opts.transport === "claude" ? "claude"
       : opts.transport === "gemini" ? "gemini"
+      : opts.transport === "openrouter" ? "openrouter"
       : "m365";
 
     if (client) { try { client.end(); } catch (e) { noop(); } client = null; }
@@ -890,6 +891,7 @@
     var attempt = transport === "m365" ? connectM365(opts, chat)
       : transport === "claude" ? connectClaude(opts, chat)
       : transport === "gemini" ? connectGemini(opts, chat)
+      : transport === "openrouter" ? connectOpenRouter(opts, chat)
       : connectDirectLine(opts, chat);
 
     return attempt.then(function (c) {
@@ -900,6 +902,8 @@
         ? "Claude · Anthropic API"
         : transport === "gemini"
         ? "Gemini · Google AI (free tier)"
+        : transport === "openrouter"
+        ? "OpenRouter"
         : "Direct Line 3.0");
       els.composer.classList.remove("disabled");
       els.input.disabled = false;
@@ -969,6 +973,25 @@
       settings: opts.settings || {},
       chatId: chatId,
       agentName: (agent && agent.name) || "Gemini",
+      onActivity: handleActivity,
+      onStatus: function (s) {
+        if (s === "online") setStatus("online");
+        else if (s === "reconnecting") setStatus("reconnecting");
+        else setStatus("connecting");
+      },
+      onError: function (e) { if (hooks.onToast) hooks.onToast(e.message, "err"); }
+    });
+  }
+
+  /** OpenRouter, direct to its unified API — same stateless-history approach as Claude/Gemini. */
+  function connectOpenRouter(opts, chat) {
+    if (!global.OpenRouterClient) {
+      return Promise.reject(new Error("The OpenRouter transport failed to load."));
+    }
+    return global.OpenRouterClient.connect({
+      settings: opts.settings || {},
+      chatId: chatId,
+      agentName: (agent && agent.name) || "OpenRouter",
       onActivity: handleActivity,
       onStatus: function (s) {
         if (s === "online") setStatus("online");
