@@ -893,6 +893,14 @@ body.zen .chat-col { height: 100%; }
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+  /* Never a legitimate reason for this container itself to scroll sideways;
+     content that is genuinely too wide (a code block, a table) has its own
+     inner overflow-x instead. Without this, a flex descendant that forces
+     itself wider than its column (see .msg below) can otherwise make this
+     element pick up overflow-x:auto too, and a horizontal scrollbar next to
+     a vertical one is a well-known way to make trackpad/wheel scrolling feel
+     like it has stopped working. */
+  overflow-x: hidden;
   overscroll-behavior: contain;
   scroll-behavior: smooth;
 }
@@ -940,7 +948,7 @@ body.zen .chat-col { height: 100%; }
 
 /* ---- Messages ---- */
 
-.msg { display: flex; flex-direction: column; gap: 7px; }
+.msg { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
 .msg-in { animation: msg-rise .28s var(--ease) both; }
 @keyframes msg-rise {
   from { opacity: 0; transform: translateY(7px); }
@@ -961,6 +969,7 @@ body.zen .chat-col { height: 100%; }
   line-height: 1.72;
   color: var(--ink);
   word-break: break-word;
+  min-width: 0;
 }
 .msg-body > :first-child { margin-top: 0; }
 .msg-body > :last-child { margin-bottom: 0; }
